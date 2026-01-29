@@ -24,7 +24,7 @@ class ADS1256:
             print("ID Read success  ")
         else:
             print("ID Read failed   ")
-            return -1
+            raise Exception("ID read failed")
         self.config_adc(ADCGain.GAIN_1, DataRate.DR_30000SPS)
         return 0
 

@@ -49,13 +49,13 @@ class SPIDriver:
         return self.spi.readbytes(reg)
 
     def module_init(self):
-        self.handler = lgpio.gpiocself.handlerip_open(0)
+        self.handler = lgpio.gpiochip_open(0)
 
         lgpio.gpio_claim_output(self.handler, self.settings.spi.rst_pin)
         lgpio.gpio_claim_output(self.handler, self.settings.spi.cs_dac_pin)
         lgpio.gpio_claim_output(self.handler, self.settings.spi.cs_pin)
         lgpio.gpio_claim_input(self.handler, self.settings.spi.drdy_pin)
-        self.spi.max_speed_self.handlerz = 20000
+        self.spi.max_speed_hz = 20000
         self.spi.mode = 0b01
         return 0
 
