@@ -27,21 +27,22 @@ class Settings(BaseModel):
 
     @classmethod
     def load_settings(cls):
-        base_path = Path(__file__).parent.parent.parent / "data"
-        yml_path = base_path / "config.yml"
+        base_path = Path(__file__).parent.parent.parent / "data/config.yml"
 
         # If YAML config does not exist
-        if not yml_path.exists():
+        if not base_path.exists():
+            if not base_path.parent.exists():
+                base_path.parent.mkdir()
             # Otherwise create default config
             settings = cls.get_default_settings()
 
-            with open(yml_path, "w", encoding="UTF-8") as yml_file:
+            with open(base_path, "w", encoding="UTF-8") as yml_file:
                 yaml.dump(settings.model_dump(mode="json"), yml_file, indent=2)
 
             return settings
 
         # Load existing YAML config
-        with open(yml_path, "r", encoding="UTF-8") as yml_file:
+        with open(base_path, "r", encoding="UTF-8") as yml_file:
             return cls(**yaml.safe_load(yml_file))
 
     @classmethod

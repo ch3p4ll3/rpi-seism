@@ -1,12 +1,13 @@
 import asyncio
-import websockets
 import json
-import time
 from threading import Thread
 from queue import Queue
 from collections import deque
+
+import websockets
 import numpy as np
 from obspy import Trace, UTCDateTime
+
 
 class WebSocketSender(Thread):
     def __init__(self, data_queue: Queue, host: str = "localhost", port: int = 8765, downsample_rate: int = 10):
