@@ -36,7 +36,7 @@ def main():
     m_seed_writer_job.start()
 
     # Create and start the WebSocketSender job thread (sends data over WebSocket)
-    websocket_job = WebSocketSender(websocket_queue, shutdown_event)
+    websocket_job = WebSocketSender(websocket_queue, shutdown_event, host="0.0.0.0")
     websocket_job.start()
 
     # Gracefully stop all threads

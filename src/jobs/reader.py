@@ -7,44 +7,60 @@ from src.settings.channel import Channel
 from src.driver.ads1256 import ADS1256
 from src.driver.enums import ScanMode
 
-
 class Reader(Thread):
     def __init__(self, settings: Settings, queues: list[Queue], shutdown_event: Event):
         self.settings = settings
         self.shutdown_event = shutdown_event
-        self._running = True
-
         self.queues = queues
+        # 30 minutes * 60 seconds
+        self.duration_seconds = 30 * 60 
         super().__init__()
 
     def run(self):
-        interval_per_channel = 1.0 / self.settings.sampling_rate  # seconds per channel
-        next_sample_time = time.perf_counter()  # start now
+        # We divide the interval by the number of channels to keep the cycle consistent
+        num_channels = len(self.settings.channels)
+        interval = 1.0 / self.settings.sampling_rate
+        
+        start_time = time.perf_counter()
+        end_time = start_time + self.duration_seconds
 
         try:
             with ADS1256(self.settings) as adc:
+                # Optimized: Set mode once if all channels are same type
+                # (Assuming differential for geophones)
+                adc.set_mode(ScanMode.DifferentialInput)
+                
+                samples_collected = 0
+                
                 while not self.shutdown_event.is_set():
+                    loop_start = time.perf_counter()
+
                     timestamp = time.time()
 
                     for channel in self.settings.channels:
-                        # Wait until the scheduled sample time
-                        now = time.perf_counter()
-                        sleep_time = next_sample_time - now
-                        if sleep_time > 0:
-                            time.sleep(sleep_time)
-
-                        # Read ADC and convert to voltage
-                        adc.set_mode(ScanMode.DifferentialInput if channel.use_differential_channel else ScanMode.SingleEndedInput)
+                        # Direct read - minimizing MUX switching overhead
                         adc_value = adc.get_channel_value(channel.adc_channel)
-
                         self.__update_queues(channel, adc_value, timestamp)
 
-                        # Schedule next sample for this channel
-                        next_sample_time += interval_per_channel
+                    samples_collected += 1
+
+                    # Precise Timing: Calculate sleep until the next 100Hz tick
+                    next_tick = start_time + (samples_collected * interval)
+                    sleep_time = next_tick - time.perf_counter()
+                    
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    else:
+                        # If we are here, the RPi is falling behind!
+                        pass
 
         except Exception as e:
             print(f"Reader thread exception: {e}")
+        finally:
+            print(f"Recording finished. Total cycles: {samples_collected}")
 
-    def __update_queues(self, channel: Channel, value: float, timestamp: int):
+    def __update_queues(self, channel: Channel, value: float, timestamp: float):
         for queue in self.queues:
+            # Tip: Ensure your consumer queue handles data quickly 
+            # so this thread doesn't block.
             queue.put((channel, value, timestamp))

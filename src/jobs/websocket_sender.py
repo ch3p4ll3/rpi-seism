@@ -1,7 +1,7 @@
 import asyncio
 import json
 from threading import Thread, Event
-from queue import Queue
+from queue import Queue, Empty
 from collections import deque
 
 import websockets
@@ -10,21 +10,23 @@ from obspy import Trace, UTCDateTime
 
 
 class WebSocketSender(Thread):
-    def __init__(self, data_queue: Queue, shutdown_event: Event, host: str = "localhost", port: int = 8765, downsample_rate: int = 10):
-        """
-        Args:
-            data_queue (Queue): Queue from which data will be read (channel, value, timestamp)
-            host (str): WebSocket server host
-            port (int): WebSocket server port
-            downsample_rate (int): Number of samples to accumulate before decimating (default: 10)
-        """
+    def __init__(
+        self,
+        data_queue: Queue,
+        shutdown_event: Event,
+        host: str = "localhost",
+        port: int = 8765,
+        downsample_rate: int = 10,
+    ):
         super().__init__()
         self.data_queue = data_queue
+        self.shutdown_event = shutdown_event
         self.host = host
         self.port = port
         self.downsample_rate = downsample_rate
-        self.shutdown_event = shutdown_event
-        self._buffers = {}  # {channel_name: deque of (timestamp, value)}
+
+        self._buffers = {}  # {channel_name: deque[(timestamp, value)]}
+        self._clients = set()  # connected websocket clients
 
     def run(self):
         asyncio.run(self._start_server())
@@ -32,55 +34,69 @@ class WebSocketSender(Thread):
     async def _start_server(self):
         async with websockets.serve(self._handle_connection, self.host, self.port):
             print(f"WebSocket server started on ws://{self.host}:{self.port}")
-            await asyncio.Future()  # Keep the server running
+            await self._producer_loop()
 
     async def _handle_connection(self, websocket):
+        self._clients.add(websocket)
+        print(f"Client connected ({len(self._clients)} total)")
         try:
-            while not self.shutdown_event.is_set():
-                # Get data from the queue
-                try:
-                    channel, value, timestamp = self.data_queue.get(timeout=1)  # 1-second timeout
-                except Exception:
-                    continue  # No data, continue to the next iteration
+            await websocket.wait_closed()
+        finally:
+            self._clients.discard(websocket)
+            print(f"Client disconnected ({len(self._clients)} total)")
 
-                # Buffer the data per channel
-                if channel.name not in self._buffers:
-                    self._buffers[channel.name] = deque(maxlen=self.downsample_rate)
+    async def _producer_loop(self):
+        """Consumes queue data and broadcasts to all clients."""
+        while not self.shutdown_event.is_set():
+            try:
+                channel, value, timestamp = self.data_queue.get(timeout=1)
+            except Empty:
+                await asyncio.sleep(0.01)
+                continue
 
-                # Add current sample to the buffer
-                self._buffers[channel.name].append((timestamp, value))
+            name = channel.name
+            if name not in self._buffers:
+                self._buffers[name] = deque(maxlen=self.downsample_rate)
 
-                # If buffer is full, decimate (reduce the sampling rate) and send
-                if len(self._buffers[channel.name]) == self.downsample_rate:
-                    # Create an obspy Trace for the data
-                    times, values = zip(*self._buffers[channel.name])
-                    trace = Trace()
-                    trace.data = np.array(values, dtype=np.float32)
-                    trace.stats.network = "XX"  # You can set your network code here
-                    trace.stats.station = channel.name
-                    trace.stats.starttime = UTCDateTime(times[0])
+            self._buffers[name].append((timestamp, value))
 
-                    # Decimate the trace (downsample it)
-                    trace.decimate(factor=self.downsample_rate)
+            if len(self._buffers[name]) == self.downsample_rate:
+                times, values = zip(*self._buffers[name])
 
-                    # Send the decimated data
-                    self._send_data(websocket, trace)
+                trace = Trace()
+                trace.data = np.array(values, dtype=np.float32)
+                trace.stats.network = "XX"
+                trace.stats.station = name
+                trace.stats.starttime = UTCDateTime(times[0])
 
-                    # Clear the buffer after sending
-                    self._buffers[channel.name].clear()
+                trace.decimate(factor=self.downsample_rate)
 
-                await asyncio.sleep(0.01)  # Small sleep to avoid CPU overuse
+                await self._broadcast(trace)
+                self._buffers[name].clear()
+
+    async def _broadcast(self, trace):
+        if not self._clients:
+            return
+
+        message = json.dumps(
+            {
+                "channel": trace.stats.station,
+                "timestamp": trace.stats.starttime.isoformat(),
+                "data": trace.data.tolist(),
+            }
+        )
+
+        dead_clients = set()
+
+        send_tasks = []
+        for ws in self._clients:
+            send_tasks.append(self._safe_send(ws, message, dead_clients))
+
+        await asyncio.gather(*send_tasks, return_exceptions=True)
+        self._clients.difference_update(dead_clients)
+
+    async def _safe_send(self, websocket, message, dead_clients):
+        try:
+            await websocket.send(message)
         except websockets.exceptions.ConnectionClosed:
-            print("Client disconnected.")
-
-    async def _send_data(self, websocket, trace):
-        # Prepare the message
-        message = {
-            "channel": trace.stats.station,
-            "timestamp": trace.stats.starttime.isoformat(),
-            "data": trace.data.tolist()  # Convert the numpy array to a list for sending
-        }
-
-        # Send message via WebSocket
-        await websocket.send(json.dumps(message))
-        print(f"Sent data: {message}")
+            dead_clients.add(websocket)
