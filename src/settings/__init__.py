@@ -12,6 +12,7 @@ class Settings(BaseModel):
     station: str
 
     sampling_rate: int
+    decimation_factor: int
     use_differential_channel: bool
     spi: Spi
     channels: list[Channel]
@@ -52,6 +53,7 @@ class Settings(BaseModel):
             "network": "XX",
             "station": "RPI3",
             "sampling_rate": 100,
+            "decimation_factor": 4,
             "use_differential_channel": True,
             "spi": {
                 "pwdn_pin": 27,

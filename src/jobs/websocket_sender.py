@@ -1,102 +1,125 @@
-import asyncio
-import json
 from threading import Thread, Event
 from queue import Queue, Empty
 from collections import deque
 
-import websockets
+import json
+import asyncio
+
 import numpy as np
-from obspy import Trace, UTCDateTime
+import websockets
+from obspy import UTCDateTime, Trace
+
+from src.settings import Settings
 
 
 class WebSocketSender(Thread):
     def __init__(
         self,
+        settings: Settings,
         data_queue: Queue,
         shutdown_event: Event,
-        host: str = "localhost",
-        port: int = 8765,
-        downsample_rate: int = 10,
+        host: str = "0.0.0.0",
+        port: int = 8765
     ):
-        super().__init__()
+        super().__init__(daemon=True)
         self.data_queue = data_queue
         self.shutdown_event = shutdown_event
         self.host = host
         self.port = port
-        self.downsample_rate = downsample_rate
+        self._clients = set()
 
-        self._buffers = {}  # {channel_name: deque[(timestamp, value)]}
-        self._clients = set()  # connected websocket clients
+        self.settings = settings
+
+        # Sliding Window Config
+        self.window_size = 500  # 2.5s lookback for filter stability
+        self.step_size = 100    # Update every 0.5s
+
+        # Buffers
+        self.data_buffer = deque(maxlen=self.window_size)
+        self.time_buffer = deque(maxlen=self.window_size)
+        self.sample_counter = 0
 
     def run(self):
-        asyncio.run(self._start_server())
+        asyncio.run(self._main_loop())
 
-    async def _start_server(self):
+    async def _main_loop(self):
         async with websockets.serve(self._handle_connection, self.host, self.port):
-            print(f"WebSocket server started on ws://{self.host}:{self.port}")
+            print(f"Downsampled Data Server started on ws://{self.host}:{self.port}")
             await self._producer_loop()
 
     async def _handle_connection(self, websocket):
         self._clients.add(websocket)
-        print(f"Client connected ({len(self._clients)} total)")
         try:
             await websocket.wait_closed()
         finally:
             self._clients.discard(websocket)
-            print(f"Client disconnected ({len(self._clients)} total)")
 
     async def _producer_loop(self):
-        """Consumes queue data and broadcasts to all clients."""
+        loop = asyncio.get_running_loop()
+        
         while not self.shutdown_event.is_set():
             try:
-                channel, value, timestamp = self.data_queue.get(timeout=1)
+                # Get raw point from queue
+                item = await loop.run_in_executor(None, self.data_queue.get, True, 0.5)
+                channel, value, timestamp = item
+                
+                # Add to sliding window
+                self.data_buffer.append(float(value))
+                self.time_buffer.append(timestamp)
+                self.sample_counter += 1
+
+                # Process every STEP_SIZE samples once window is primed
+                if len(self.data_buffer) == self.window_size and (self.sample_counter % self.step_size == 0):
+                    await self._process_and_broadcast(channel.name)
+                
             except Empty:
-                await asyncio.sleep(0.01)
                 continue
+            except Exception as e:
+                print(f"Error in producer: {e}")
 
-            name = channel.name
-            if name not in self._buffers:
-                self._buffers[name] = deque(maxlen=self.downsample_rate)
+    async def _process_and_broadcast(self, channel_name):
+        """Perform downsampling on the current window and send results."""
+        # Convert deque to array for ObsPy
+        data_array = np.array(self.data_buffer)
+        
+        # Create Trace
+        tr = Trace(data=data_array)
+        tr.stats.sampling_rate = self.settings.sampling_rate
+        tr.stats.starttime = UTCDateTime(self.time_buffer[0])
 
-            self._buffers[name].append((timestamp, value))
+        # Decimate (Apply Anti-Alias filter automatically)
+        # We work on a copy to keep the raw buffer pristine
+        tr_decimated = tr.copy()
+        tr_decimated.decimate(self.settings.decimation_factor, no_filter=False)
 
-            if len(self._buffers[name]) == self.downsample_rate:
-                times, values = zip(*self._buffers[name])
+        # Extract only the "new" samples since the last step
+        # For Factor 4 and Step 100, we take the last 25 samples
+        new_samples_count = int(self.step_size / self.settings.decimation_factor)
+        downsampled_values = tr_decimated.data[-new_samples_count:]
+        
+        # We send the latest point or the whole new batch
+        # Sending the whole batch is better for high-performance graphing
+        message = json.dumps({
+            "channel": channel_name,
+            "timestamp": tr_decimated.stats.endtime.isoformat(),
+            "fs": tr_decimated.stats.sampling_rate,
+            "data": downsampled_values.tolist() 
+        })
 
-                trace = Trace()
-                trace.data = np.array(values, dtype=np.float32)
-                trace.stats.network = "XX"
-                trace.stats.station = name
-                trace.stats.starttime = UTCDateTime(times[0])
+        await self._broadcast(message)
 
-                trace.decimate(factor=self.downsample_rate)
-
-                await self._broadcast(trace)
-                self._buffers[name].clear()
-
-    async def _broadcast(self, trace):
+    async def _broadcast(self, message):
         if not self._clients:
             return
-
-        message = json.dumps(
-            {
-                "channel": trace.stats.station,
-                "timestamp": trace.stats.starttime.isoformat(),
-                "data": trace.data.tolist(),
-            }
-        )
-
         dead_clients = set()
-
-        send_tasks = []
-        for ws in self._clients:
-            send_tasks.append(self._safe_send(ws, message, dead_clients))
-
-        await asyncio.gather(*send_tasks, return_exceptions=True)
-        self._clients.difference_update(dead_clients)
+        send_tasks = [self._safe_send(ws, message, dead_clients) for ws in self._clients]
+        if send_tasks:
+            await asyncio.gather(*send_tasks)
+        if dead_clients:
+            self._clients.difference_update(dead_clients)
 
     async def _safe_send(self, websocket, message, dead_clients):
         try:
             await websocket.send(message)
-        except websockets.exceptions.ConnectionClosed:
+        except Exception:
             dead_clients.add(websocket)
