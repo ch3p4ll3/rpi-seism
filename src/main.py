@@ -1,4 +1,6 @@
 import signal
+from os import nice
+
 from queue import Queue
 from pathlib import Path
 from threading import Event
@@ -12,6 +14,11 @@ logger = getLogger(__name__)
 
 
 def main():
+    try:
+        nice(-20)
+    except PermissionError:
+        logger.error("Failed to set priority. Run with sudo!")
+
     # Define paths and load settings
     data_base_folder = Path(__file__).parent.parent / "data"
     settings = Settings.load_settings()
