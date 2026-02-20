@@ -30,14 +30,13 @@ class Reader(Thread):
         interval = 1.0 / self.settings.sampling_rate / num_channels
 
         start_time = time.perf_counter()
+        samples_collected = 0
 
         try:
             with ADS1256(self.settings) as adc:
                 # Optimized: Set mode once if all channels are same type
                 # (Assuming differential for geophones)
                 adc.set_mode(ScanMode.DIFFERENTIAL_INPUT if self.settings.use_differential_channel else ScanMode.SINGLE_ENDED_INPUT)
-
-                samples_collected = 0
 
                 while not self.shutdown_event.is_set():
                     timestamp = time.time()
@@ -58,6 +57,10 @@ class Reader(Thread):
                     else:
                         # If we are here, the RPi is falling behind!
                         logger.warning(f"RPi is falling behind by {abs(sleep_time):.4f}s")
+
+                        # This 'snaps' the schedule to the present moment
+                        start_time = time.perf_counter()
+                        samples_collected = 0
 
         except Exception as e:
             logger.exception(f"Reader thread exception: {e}", exc_info=True)
