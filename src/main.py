@@ -25,6 +25,7 @@ def main():
 
     # Create a global shutdown event
     shutdown_event = Event()
+    earthquake_event = Event()
 
     # Define a signal handler for systemd (SIGTERM)
     def handle_exit(sig, frame):
@@ -40,20 +41,41 @@ def main():
     trigger_queue = Queue()
 
     # Create and start the Reader job thread (reads from ADC, puts data in the queues)
-    reader_job = Reader(settings, [msed_writer_queue, websocket_queue, trigger_queue], shutdown_event)
+    reader_job = Reader(
+        settings,
+        [msed_writer_queue, websocket_queue, trigger_queue],
+        shutdown_event
+    )
     reader_job.start()
 
     # Create and start the MSeedWriter job thread (writes data to MiniSEED file)
-    m_seed_writer_job = MSeedWriter(settings, msed_writer_queue, data_base_folder, shutdown_event, 1800)
+    m_seed_writer_job = MSeedWriter(
+        settings,
+        msed_writer_queue,
+        data_base_folder,
+        shutdown_event,
+        1800
+    )
     m_seed_writer_job.start()
 
     # Create and start the WebSocketSender job thread (sends data over WebSocket)
-    websocket_job = WebSocketSender(settings, websocket_queue, shutdown_event, host="0.0.0.0")
+    websocket_job = WebSocketSender(
+        settings,
+        websocket_queue,
+        shutdown_event,
+        earthquake_event,
+        host="0.0.0.0"
+    )
     websocket_job.start()
 
-    # Create and start the WebSocketSender job thread (sends data over WebSocket)
-    websocket_job = TriggerProcessor(settings, trigger_queue, shutdown_event)
-    websocket_job.start()
+    # Create and start the TriggerProcessor job thread (sends data over WebSocket)
+    trigger_processor_job = TriggerProcessor(
+        settings,
+        trigger_queue,
+        shutdown_event,
+        earthquake_event
+    )
+    trigger_processor_job.start()
 
 
     # Gracefully stop all threads
@@ -62,6 +84,7 @@ def main():
     # Wait for all threads to finish
     m_seed_writer_job.join()
     websocket_job.join()
+    trigger_processor_job.join()
 
     logger.debug("All threads stopped and the main script has finished.")
 

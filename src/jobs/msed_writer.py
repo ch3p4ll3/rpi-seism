@@ -13,7 +13,15 @@ logger = getLogger(__name__)
 
 
 class MSeedWriter(Thread):
-    def __init__(self, settings: Settings, data_queue: Queue, output_dir: str, shutdown_event: Event, write_interval_sec: int = 1800):
+    def __init__(
+        self,
+        settings: Settings,
+        data_queue: Queue,
+        output_dir: Path,
+        shutdown_event: Event,
+        earthquake_event: Event,
+        write_interval_sec: int = 1800
+    ):
         """
         Args:
             data_queue (Queue): Queue from which to get (Channel, value) tuples
@@ -26,6 +34,7 @@ class MSeedWriter(Thread):
         self.output_dir = output_dir
         self.write_interval_sec = write_interval_sec
         self.shutdown_event = shutdown_event
+        self.earthquake_event = earthquake_event
 
         # Temporary storage: dict of channel_name -> list of (timestamp, value)
         self._buffer = {}
@@ -64,10 +73,8 @@ class MSeedWriter(Thread):
         if not self._buffer:
             return
 
-        output_dir = Path(self.output_dir)
-
         logger.debug(f"Writing {len(self._buffer)} channels to MiniSEED...")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         stream = Stream()
 
         for channel_name, data_list in self._buffer.items():
@@ -87,7 +94,7 @@ class MSeedWriter(Thread):
             stream.append(trace)
 
         if stream:
-            filename = output_dir / f"data_{UTCDateTime().strftime('%Y%m%dT%H%M%S')}.mseed"
+            filename = self.output_dir / f"data_{UTCDateTime().strftime('%Y%m%dT%H%M%S')}.mseed"
             stream.write(filename, format='MSEED')
             logger.debug(f"Written {filename}")
 

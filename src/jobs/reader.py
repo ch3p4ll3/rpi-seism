@@ -12,7 +12,12 @@ logger = getLogger(__name__)
 
 
 class Reader(Thread):
-    def __init__(self, settings: Settings, queues: list[Queue], shutdown_event: Event):
+    def __init__(
+        self,
+        settings: Settings,
+        queues: list[Queue],
+        shutdown_event: Event
+    ):
         self.settings = settings
         self.shutdown_event = shutdown_event
         self.queues = queues

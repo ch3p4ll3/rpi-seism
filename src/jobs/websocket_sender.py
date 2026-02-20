@@ -21,12 +21,14 @@ class WebSocketSender(Thread):
         settings: Settings,
         data_queue: Queue,
         shutdown_event: Event,
+        earthquake_event: Event,
         host: str = "0.0.0.0",
         port: int = 8765
     ):
         super().__init__(daemon=True)
         self.data_queue = data_queue
         self.shutdown_event = shutdown_event
+        self.earthquake_event = earthquake_event
         self.host = host
         self.port = port
         self._clients = set()
