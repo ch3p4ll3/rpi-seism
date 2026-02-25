@@ -10,6 +10,5 @@ dependencies = [
     "pyaml>=25.7.0",
     "pydantic>=2.12.5",
     "pyserial>=3.5",
-    "spidev>=3.8",
     "websockets>=16.0",
 ]

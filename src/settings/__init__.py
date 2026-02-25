@@ -13,8 +13,6 @@ class Settings(BaseModel):
 
     sampling_rate: int
     decimation_factor: int
-    use_differential_channel: bool
-    spi: Spi
     channels: list[Channel]
 
     def export_settings(self):
@@ -54,33 +52,21 @@ class Settings(BaseModel):
             "station": "RPI3",
             "sampling_rate": 100,
             "decimation_factor": 4,
-            "use_differential_channel": True,
-            "spi": {
-                "pwdn_pin": 27,
-                "cs_pin": 22,
-                "drdy_pin": 17
-            },
             "channels": [
                 {
                     "name": "EHZ",
                     "adc_channel": 0,
                     "orientation": "vertical",
-                    "gain": 1000,
-                    "sensitivity": 28.8
                 },
                 {
                     "name": "EHN",
                     "adc_channel": 1,
                     "orientation": "north",
-                    "gain": 1000,
-                    "sensitivity": 28.8
                 },
                 {
                     "name": "EHE",
                     "adc_channel": 2,
                     "orientation": "east",
-                    "gain": 1000,
-                    "sensitivity": 28.8
                 }
             ]
         }
