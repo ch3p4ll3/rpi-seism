@@ -6,12 +6,12 @@ from pathlib import Path
 from obspy import UTCDateTime
 from obspy.core.inventory import (
     Channel,
-    CoefficientsTypeResponseStage,
     Inventory,
     InstrumentSensitivity,
     Network,
     PolesZerosResponseStage,
     Response,
+    ResponseStage,
     Site,
     Station,
 )
@@ -75,15 +75,13 @@ def _build_channel_response(settings: Settings, sensitivity: float) -> Response:
         poles=_GD45_POLES,
     )
 
-    adc_stage = CoefficientsTypeResponseStage(
+    # Plain gain stage — no filter, no decimation metadata required by evalresp
+    adc_stage = ResponseStage(
         stage_sequence_number=2,
         stage_gain=counts_per_volt,
         stage_gain_frequency=0.0,
         input_units="V",
         output_units="COUNTS",
-        cf_transfer_function_type="DIGITAL",
-        numerator=[1.0],
-        denominator=[],
     )
 
     return Response(
@@ -142,6 +140,13 @@ def _build_inventory(settings: Settings) -> Inventory:
         networks=[Network(code=settings.station.network, stations=[station])],
         source=settings.station.station,
     )
+
+
+class StationXMLEpochError(Exception):
+    """
+    Raised when instrument settings have changed but start_date has not been
+    updated. A new start_date is required to open a new response epoch.
+    """
 
 
 def _read_sidecar(fingerprint_path: Path) -> dict:

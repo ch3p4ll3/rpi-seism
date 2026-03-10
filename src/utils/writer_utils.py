@@ -23,7 +23,7 @@ def sds_path(archive_root: Path, network: str, station: str,
         f"{network}.{station}.{_LOCATION_CODE}.{channel}"
         f".D.{t.year}.{t.julday:03d}"
     )
-    return archive_root / str(t.year) / network / station / f"{channel}.D" / filename
+    return archive_root / "archive" / str(t.year) / network / station / f"{channel}.D" / filename
 
 
 def split_buffer_at_midnight(

@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+from datetime import UTC
 
 import yaml
 from pydantic import BaseModel
@@ -79,7 +80,7 @@ class Settings(BaseModel):
         the application with a known configuration when no existing settings file is found.
         """
         data = {
-            "start_date": datetime.now().isoformat(),
+            "start_date": datetime.now(tz=UTC).isoformat(),
             "decimation_factor": 4,
             "station": {
                 "network": "XX",
