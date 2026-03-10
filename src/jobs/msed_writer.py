@@ -114,8 +114,8 @@ class MSeedWriter(Thread):
             trace.stats.starttime = UTCDateTime(self._start_time)
             trace.stats.sampling_rate = self.settings.mcu.sampling_rate
             trace.stats.channel = ch_name
-            trace.stats.station = self.settings.station
-            trace.stats.network = self.settings.network
+            trace.stats.station = self.settings.station.station
+            trace.stats.network = self.settings.station.network
 
             stream.append(trace)
 

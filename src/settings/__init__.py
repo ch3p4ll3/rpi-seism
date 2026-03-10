@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 import yaml
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 from .channel import Channel
 from .mcu_settings import MCUSettings
 from .notifier import Notifier
+from .station import Station
 
 
 class Settings(BaseModel):
@@ -14,8 +16,8 @@ class Settings(BaseModel):
     configuration, provides methods to load and save settings from/to a YAML file,
     and includes a method to update existing settings with new values.
     """
-    network: str
-    station: str
+    station: Station
+    start_date: datetime
 
     decimation_factor: int
     channels: list[Channel]
@@ -77,9 +79,15 @@ class Settings(BaseModel):
         the application with a known configuration when no existing settings file is found.
         """
         data = {
-            "network": "XX",
-            "station": "RPI3",
+            "start_date": datetime.now().isoformat(),
             "decimation_factor": 4,
+            "station": {
+                "network": "XX",
+                "station": "RPI3",
+                "latitude": 0.0,
+                "longitude": 0.0,
+                "elevation": 0.0
+            },
             "channels": [
                 {
                     "name": "EHZ",
