@@ -9,7 +9,7 @@ from gpiozero.pins.mock import MockFactory
 from gpiozero.exc import BadPinFactory
 from gpiozero import OutputDevice, Device
 
-from exception.mcu_no_response import MCUNoResponse
+from src.exception.mcu_no_response import MCUNoResponse
 from src.settings import Settings
 from src.structs.sample import Sample
 from src.structs.mcu_settings import MCUSettingsFrame
