@@ -12,3 +12,4 @@ class Channel(BaseModel):
     name: str
     adc_channel: int
     orientation: ChannelOrientation
+    sensitivity: float = 28.8
