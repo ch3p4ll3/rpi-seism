@@ -4,7 +4,7 @@ from queue import Queue, Empty
 from pathlib import Path
 from logging import getLogger
 
-from obspy import Stream, Trace, UTCDateTime
+from obspy import read, Stream, Trace, UTCDateTime
 import numpy as np
 
 from src.utils.writer_utils import sds_path, split_buffer_at_midnight
@@ -134,12 +134,21 @@ class MSeedWriter(Thread):
 
                 stream = Stream([trace])
 
-                if path.exists():
-                    stream.write(str(path), format="MSEED", reclen=512, append=True)
-                    logger.debug("Appended %d samples to %s", len(slice_values), path.name)
-                else:
-                    stream.write(str(path), format="MSEED", reclen=512)
-                    logger.info("Created %s", path.name)
+                self._write_trace(path, stream)
 
         self._buffer.clear()
         self._start_time = None
+
+    def _write_trace(self, path: Path, new_stream: Stream):
+        if path.exists():
+            existing = read(str(path))
+            combined = existing + new_stream
+            combined.merge(method=1, fill_value=0)
+            combined.write(str(path), format="MSEED", reclen=512)
+            logger.debug("Merged %d existing and %d new samples into %s",
+                         sum(len(tr.data) for tr in existing),
+                         sum(len(tr.data) for tr in new_stream),
+                         path.name)
+        else:
+            new_stream.write(str(path), format="MSEED", reclen=512)
+            logger.info("Created %s", path.name)
