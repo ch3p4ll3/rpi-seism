@@ -7,9 +7,8 @@ from pydantic import BaseModel
 
 from .channel import Channel
 from .mcu_settings import MCUSettings
-from .notifier import Notifier
 from .station import Station
-from .trigger import Trigger
+from .jobs import JobsSettings
 
 
 class Settings(BaseModel):
@@ -24,8 +23,8 @@ class Settings(BaseModel):
     decimation_factor: int
     channels: list[Channel]
     mcu: MCUSettings
-    notifiers: list[Notifier]
-    trigger: Trigger
+
+    jobs_settings: JobsSettings
 
     def export_settings(self):
         """
@@ -114,18 +113,27 @@ class Settings(BaseModel):
                 "adc_gain": 6,
                 "adc_sample_rate": 11
             },
-            "notifiers": [
-                {
-                    "url": "tgram://{bot_token}/{chat_id}/",
-                    "enabled": True
+            "jobs_settings": {
+                "notifiers": [
+                    {
+                        "url": "tgram://{bot_token}/{chat_id}/",
+                        "enabled": True
+                    }
+                ],
+                "trigger": {
+                    "sta_sec": 0.5,
+                    "lta_sec": 10.0,
+                    "thr_on": 3.5,
+                    "thr_off": 1.5,
+                    "trigger_channel": "EHZ"
+                },
+                "writer": {
+                    "write_interval_sec": 1800
+                },
+                "reader": {
+                    "port": "/dev/ttyUSB0",
+                    "baudrate": 250000
                 }
-            ],
-            "trigger": {
-                "sta_sec": 0.5,
-                "lta_sec": 10.0,
-                "thr_on": 3.5,
-                "thr_off": 1.5,
-                "trigger_channel": "EHZ"
             }
         }
 

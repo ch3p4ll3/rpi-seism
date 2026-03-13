@@ -35,14 +35,13 @@ class MSeedWriter(Thread):
         data_queue: Queue,
         output_dir: Path,
         shutdown_event: Event,
-        earthquake_event: Event,
-        write_interval_sec: int = 1800,
+        earthquake_event: Event
     ):
         super().__init__()
         self.settings = settings
         self.data_queue = data_queue
         self.output_dir = output_dir
-        self.write_interval_sec = write_interval_sec
+        self.write_interval_sec = settings.jobs_settings.writer.write_interval_sec
         self.shutdown_event = shutdown_event
         self.earthquake_event = earthquake_event
 
