@@ -38,4 +38,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Reset the entrypoint, don't invoke `uv`
 ENTRYPOINT []
 
-CMD ["uv", "run", "python", "-m", "src.main"]
+CMD ["uv", "run", "rpi-seism"]
