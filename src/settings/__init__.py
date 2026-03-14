@@ -18,7 +18,7 @@ class Settings(BaseModel):
     and includes a method to update existing settings with new values.
     """
     station: Station
-    start_date: datetime
+    start_date: datetime    # Update only when hardware configuration changes (triggers new StationXML epoch)
 
     decimation_factor: int
     channels: list[Channel]
