@@ -245,7 +245,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
     current_fingerprint = _fingerprint(settings)
     current_start_date  = str(settings.start_date)
 
-    # ── First run ─────────────────────────────────────────────────────────────
+    #  First run 
     if not output_path.exists():
         logger.info("station.xml not found — generating for the first time.")
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -261,7 +261,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
         )
         return output_path
 
-    # ── File exists but no sidecar (manual creation) ──────────────────────────
+    #  File exists but no sidecar (manual creation) 
     if not fingerprint_path.exists():
         _write_sidecar(fingerprint_path, current_fingerprint, current_start_date)
         logger.info(
@@ -271,7 +271,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
         )
         return output_path
 
-    # ── Compare against saved state ───────────────────────────────────────────
+    #  Compare against saved state 
     sidecar = _read_sidecar(fingerprint_path)
     saved_fingerprint = sidecar["fingerprint"]
     saved_start_date  = sidecar["start_date"]
@@ -300,7 +300,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
     _close_and_append_epochs(
         settings,
         output_path,
-        new_start=UTCDateTime(current_start_date),
+        new_start=UTCDateTime(settings.start_date),
     )
     _write_sidecar(fingerprint_path, current_fingerprint, current_start_date)
 
