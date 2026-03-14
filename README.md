@@ -1,7 +1,7 @@
 # RPI-SEISM
 
 A 3‑axis geophone seismometer project for Raspberry Pi.  
-Reads data from an Arduino‑based digitizer over RS485, processes it in real‑time, and provides:
+Reads data from an Arduino‑based digitizer over RS-422, processes it in real‑time, and provides:
 
 - **SDS-compliant MiniSEED archiving** (via ObsPy)
 - **StationXML generation** with full GD-4.5 PAZ instrument response
@@ -45,7 +45,7 @@ The system is built around five concurrently running threads, making it efficien
 
 - **Continuous data acquisition** from a 3‑channel (EHZ, EHN, EHE) geophone at 100 Hz
 - **MCU settings handshake** – sends ADC gain and sample rate to the Arduino on startup and verifies the echo before streaming begins
-- **Robust RS485 communication** with automatic heartbeat to keep the Arduino streaming
+- **Robust RS-422 communication** with automatic heartbeat to keep the Arduino streaming
 - **SDS-compliant MiniSEED archive** – writes to a standard SeisComp Data Structure directory tree, with automatic midnight splitting so each sample lands in the correct day file
 - **StationXML generation** – builds a fully calibrated `station.xml` with GD-4.5 PAZ response stages; automatically manages instrument response epochs when hardware settings change
 - **STA/LTA trigger** – detects earthquakes on the vertical channel and triggers an early archive flush after 5 minutes, then resumes the normal schedule
@@ -61,13 +61,13 @@ The system is built around five concurrently running threads, making it efficien
 - **Raspberry Pi** (any model with GPIO, tested on RPi 3/4)
 - **Arduino‑based digitizer** (code provided in separate repository)
   - Sampling at up to 100 Hz, 3 channels
-  - Communicates over RS485 at 250 000 baud
+  - Communicates over RS-422 at 250 000 baud
   - Receives a settings frame on startup, echoes it back for verification
   - Expects a heartbeat pulse every 500 ms to continue streaming
-- **MAX485** or equivalent RS485 transceiver connected to the Pi's UART and a GPIO pin (e.g., GPIO5) for direction control
+- **MAX485** or equivalent RS-422 transceiver connected to the Pi's UART and a GPIO pin (e.g., GPIO5) for direction control
 - **GD-4.5 geophone** (3‑component, 4.5 Hz natural frequency) with appropriate pre‑amplifier and shielded cables
 
-> 📌 **Arduino firmware**: [rpi-seism-reader](https://github.com/ch3p4ll3/rpi-seism-reader) – handles ADC reading, packet framing, RS485 transmission, and settings acknowledgement.
+> 📌 **Arduino firmware**: [rpi-seism-reader](https://github.com/ch3p4ll3/rpi-seism-reader) – handles ADC reading, packet framing, RS-422 transmission, and settings acknowledgement.
 
 ---
 
@@ -175,7 +175,7 @@ uv run python -m src.main
 On startup the system will:
 
 1. Validate configuration and generate `station.xml` if needed (or update epochs if settings changed)
-2. Send ADC settings to the Arduino over RS485 and wait for echo confirmation
+2. Send ADC settings to the Arduino over RS-422 and wait for echo confirmation
 3. Start all four threads
 
 Stop with `Ctrl+C`. On shutdown, any buffered data is flushed to disk.
@@ -192,8 +192,8 @@ A companion web interface is available to display live waveforms and event notif
 
 ### 1. Reader Thread
 
-- **Responsibility**: Sole owner of the serial port and the RS485 direction-control GPIO.
-- **Startup handshake**: Before entering the main loop, it serialises the current `MCUSettings` into a binary frame and transmits it to the Arduino over RS485. It then waits up to 10 seconds for the Arduino to echo back an identical frame (identified by the `0xCC 0xDD` header). If the echo is absent or mismatched, a `MCUNoResponse` exception is raised and the application stops.
+- **Responsibility**: Sole owner of the serial port and the RS-422 direction-control GPIO.
+- **Startup handshake**: Before entering the main loop, it serialises the current `MCUSettings` into a binary frame and transmits it to the Arduino over RS-422. It then waits up to 10 seconds for the Arduino to echo back an identical frame (identified by the `0xCC 0xDD` header). If the echo is absent or mismatched, a `MCUNoResponse` exception is raised and the application stops.
 - **Operation**:
   - Sends a heartbeat byte (`0x01`) every `heartbeat_interval` (default 0.5 s) to keep the Arduino streaming. Before sending, it sets the MAX485 to transmit mode, then immediately back to receive.
   - Reads incoming bytes into a ring buffer, searches for the packet header (`0xAA 0xBB`), and validates the checksum (XOR of all payload bytes).
@@ -285,7 +285,7 @@ The response chain consists of two stages:
                 |   Arduino   |
                 |   (100 Hz)  |
                 +------+------+
-                       | RS485 (250 kbaud)
+                       | RS-422 (250 kbaud)
                        v
 +-------------------------------------------------+
 |  Reader Thread                                  |

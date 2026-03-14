@@ -5,9 +5,6 @@ from logging import getLogger
 import time
 
 import serial
-from gpiozero.pins.mock import MockFactory
-from gpiozero.exc import BadPinFactory
-from gpiozero import OutputDevice, Device
 
 from src.exception.mcu_no_response import MCUNoResponse
 from src.settings import Settings
@@ -20,7 +17,7 @@ logger = getLogger(__name__)
 class Reader(Thread):
     def __init__(self, settings: Settings, queues: list[Queue], shutdown_event: Event):
         """
-        Thread that continuously reads from the RS-485 serial port,
+        Thread that continuously reads from the RS-422 serial port,
         processes incoming packets, and distributes data to queues.
         """
         super().__init__()
@@ -32,21 +29,12 @@ class Reader(Thread):
         self.heartbeat_interval = 0.5  # Send pulse every 500ms
         self.last_heartbeat = 0
 
-        # Initialize the DE/RE control pin
-        # Set active_high=True (Standard for MAX485 DE pin)
-        # initial_value=False (Start in Listen mode)
-        try:
-            self.max485_control = OutputDevice(5, active_high=True, initial_value=False)
-        except BadPinFactory:
-            Device.pin_factory = MockFactory()
-            self.max485_control = OutputDevice(5, active_high=True, initial_value=False)
-
         self.channels = self.__map_channels()
 
     def run(self):
         try:
             with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
-                logger.info("Connected to RS-485 on %s at %d", self.port, self.baudrate)
+                logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
 
                 if not self._sendSettings(ser):
                     raise MCUNoResponse("MCU did not respond to settings update.")
@@ -57,10 +45,8 @@ class Reader(Thread):
                 while not self.shutdown_event.is_set():
                     # send Heartbeat to keep Arduino streaming
                     if time.time() - self.last_heartbeat > self.heartbeat_interval:
-                        self.max485_control.on()   # Switch MAX485 to Transmit
                         ser.write(b'\x01')         # Send pulse
                         ser.flush()                # Wait for bits to leave the UART
-                        self.max485_control.off()  # Switch back to Listen immediately
                         self.last_heartbeat = time.time()
 
                     # read available data
@@ -86,9 +72,9 @@ class Reader(Thread):
                             del buffer[0]
 
         except Exception:
-            logger.exception("RS485 Reader exception")
+            logger.exception("RS-422 Reader exception")
         finally:
-            logger.info("RS485 Reader stopped.")
+            logger.info("RS-422 Reader stopped.")
             self.shutdown_event.set()
 
     def _process_packet(self, data: Sample):
@@ -112,10 +98,8 @@ class Reader(Thread):
         logger.info("Sending settings to MCU: %s", sent_bytes.hex(' '))
 
         # Transmit
-        self.max485_control.on()   # Switch MAX485 to Transmit
         ser.write(sent_bytes)
         ser.flush()                # Block until UART buffer is physically empty
-        self.max485_control.off()  # Switch back to Listen IMMEDIATELY
 
         # Wait for Echo/Response
         logger.info("Waiting for MCU confirmation...")
