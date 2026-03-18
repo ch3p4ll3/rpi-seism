@@ -78,7 +78,6 @@ The system is built around five concurrently running threads, making it efficien
 - [pyserial](https://github.com/pyserial/pyserial) – serial communication
 - [websockets](https://github.com/aaugustin/websockets) – WebSocket server
 - [numpy](https://numpy.org/) – data handling
-- [gpiozero](https://gpiozero.readthedocs.io/) – GPIO control (with mock fallback for development)
 - [PyYAML](https://pyyaml.org/) – YAML configuration loading
 - [Pydantic](https://docs.pydantic.dev/) – settings validation
 - [Apprise](https://github.com/caronc/apprise) – multi-platform push notifications
