@@ -113,40 +113,54 @@ All system settings are defined in `data/config.yml`. If the file is not present
 ### Default configuration
 
 ```yaml
-start_date: "2025-01-01T00:00:00+00:00"
-
-station:
-  network: XX
-  station: RPI3
-  latitude: 0.0
-  longitude: 0.0
-  elevation: 0.0
+channels:
+- adc_channel: 0
+  name: EHZ
+  orientation: vertical
+  sensitivity: 28.8
+- adc_channel: 1
+  name: EHN
+  orientation: north
+  sensitivity: 28.8
+- adc_channel: 2
+  name: EHE
+  orientation: east
+  sensitivity: 28.8
 
 decimation_factor: 4
 
+jobs_settings:
+  notifiers:
+  - enabled: true
+    url: tgram://{bot_token}/{chat_id}/
+  reader:
+    baudrate: 250000
+    port: /dev/ttyUSB0
+  trigger:
+    lta_sec: 10.0
+    sta_sec: 0.5
+    thr_off: 1.5
+    thr_on: 3.5
+    trigger_channel: EHZ
+  writer:
+    write_interval_sec: 1800.0
+
 mcu:
-  sampling_rate: 100
   adc_gain: 6
   adc_sample_rate: 11
+  sampling_rate: 100
   vref: 2.5
 
-channels:
-  - name: EHZ
-    adc_channel: 0
-    orientation: vertical
-    sensitivity: 28.8
-  - name: EHN
-    adc_channel: 1
-    orientation: north
-    sensitivity: 28.8
-  - name: EHE
-    adc_channel: 2
-    orientation: east
-    sensitivity: 28.8
+start_date: '2026-03-18T08:23:36.479789Z'
 
-notifiers:
-  - url: "tgram://{bot_token}/{chat_id}/"
-    enabled: true
+station:
+  elevation: 0.0
+  latitude: 0.0
+  location_code: '00'
+  longitude: 0.0
+  network: XX
+  station: RPI3
+
 ```
 
 | Key | Description |
