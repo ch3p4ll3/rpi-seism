@@ -4,7 +4,7 @@ import struct
 
 from binascii import crc32
 
-from src.settings.channel import Channel
+from rpi_seism_common.settings.channel import Channel
 
 
 @dataclass

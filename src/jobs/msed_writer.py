@@ -6,9 +6,9 @@ from logging import getLogger
 
 from obspy import read, Stream, Trace, UTCDateTime
 import numpy as np
+from rpi_seism_common.settings import Settings
 
 from src.utils.writer_utils import sds_path, split_buffer_at_midnight
-from src.settings import Settings
 
 logger = getLogger(__name__)
 
@@ -127,7 +127,7 @@ class MSeedWriter(Thread):
                 trace.stats.starttime    = slice_start
                 trace.stats.sampling_rate = sampling_rate
 
-                path = sds_path(self.output_dir, network, station, ch_name, slice_start)
+                path = sds_path(self.output_dir, network, station, location_code, ch_name, slice_start)
                 path.parent.mkdir(parents=True, exist_ok=True)
 
                 stream = Stream([trace])
