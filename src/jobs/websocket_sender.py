@@ -141,9 +141,11 @@ class WebSocketSender(Thread):
     async def _broadcast(self, message: WebsocketMessage):
         if not self._clients:
             return
+        
+        payload = message.to_json
 
         dead_clients = set()
-        send_tasks = [self._safe_send(ws, message.to_json, dead_clients) for ws in self._clients]
+        send_tasks = [self._safe_send(ws, payload, dead_clients) for ws in self._clients]
         if send_tasks:
             await asyncio.gather(*send_tasks)
 

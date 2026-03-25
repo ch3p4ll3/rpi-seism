@@ -50,7 +50,6 @@ class Reader(Thread):
 
                     # read available data
                     if ser.in_waiting > 0:
-                        ser.rts = True
                         buffer.extend(ser.read(ser.in_waiting))
 
                     # process buffer for packets
