@@ -2,7 +2,6 @@ from threading import Thread, Event
 from queue import Queue, Empty
 from collections import deque
 from logging import getLogger
-import json
 import asyncio
 
 import numpy as np
