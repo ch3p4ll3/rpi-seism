@@ -8,7 +8,12 @@ import asyncio
 import numpy as np
 import websockets
 from obspy import UTCDateTime, Trace
+
 from rpi_seism_common.settings import Settings
+from rpi_seism_common.websocket_message import WebsocketMessage
+
+from src.ws_messages.sample.sample import Sample
+from src.ws_messages.sample.sample_payload import SamplePayload
 
 
 logger = getLogger(__name__)
@@ -124,21 +129,21 @@ class WebSocketSender(Thread):
         downsampled_values = tr_decimated.data[-new_samples_count:]
 
         # Construct and send the message
-        message = json.dumps({
-            "channel": channel_name,
-            "timestamp": tr_decimated.stats.endtime.isoformat(),
-            "fs": tr_decimated.stats.sampling_rate, # This is the original rate
-            "data": downsampled_values.tolist() 
-        })
+        message = SamplePayload(
+            channel=channel_name,
+            timestamp=tr_decimated.stats.endtime.isoformat() + "Z",
+            fs=tr_decimated.stats.sampling_rate,
+            data=downsampled_values.tolist()
+        )
 
-        await self._broadcast(message)
+        await self._broadcast(Sample(payload=message))
 
-    async def _broadcast(self, message):
+    async def _broadcast(self, message: WebsocketMessage):
         if not self._clients:
             return
 
         dead_clients = set()
-        send_tasks = [self._safe_send(ws, message, dead_clients) for ws in self._clients]
+        send_tasks = [self._safe_send(ws, message.to_json, dead_clients) for ws in self._clients]
         if send_tasks:
             await asyncio.gather(*send_tasks)
 
