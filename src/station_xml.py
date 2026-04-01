@@ -16,17 +16,15 @@ from obspy.core.inventory import (
     Station,
 )
 from obspy.signal.invsim import corn_freq_2_paz
+
 from rpi_seism_common.settings import Settings
+from rpi_seism_common.settings.channel import Channel as SettingsChannel
 
 from src.exception.station_xml_epoch_error import StationXMLEpochError
 
 
 logger = logging.getLogger(__name__)
 
-# GD-4.5 physical parameters
-# Adjust _GD45_DAMPING if you have an external load resistor on the geophone
-_GD45_NATURAL_FREQ = 4.5  # Hz
-_GD45_DAMPING = 0.6
 
 _ORIENTATION_MAP = {
     "vertical": {"azimuth": 0.0,  "dip": -90.0},
@@ -51,30 +49,32 @@ def _fingerprint(settings: Settings) -> str:
                 "name":        ch.name,
                 "orientation": ch.orientation,
                 "sensitivity": ch.sensitivity,
-                "analog_gain": ch.analog_gain
+                "analog_gain": ch.analog_gain,
+                "natural_frequency": ch.natural_frequency,
+                "damping": ch.damping
             }
             for ch in sorted(settings.channels, key=lambda c: c.name)
-        ],
+        ]
     }
     blob = json.dumps(relevant, sort_keys=True).encode()
     return hashlib.sha256(blob).hexdigest()
 
 
-def _build_channel_response(settings: Settings, sensitivity: float, analog_gain: float) -> Response:
+def _build_channel_response(settings: Settings, channel: SettingsChannel) -> Response:
     counts_per_volt = (settings.mcu.adc_gain * 2**23) / settings.mcu.vref
-    total_sensitivity = sensitivity * analog_gain * counts_per_volt
+    total_sensitivity = channel.sensitivity * channel.analog_gain * counts_per_volt
 
     # Compute PAZ analytically from f0 and damping via ObsPy.
-    paz = corn_freq_2_paz(fc=_GD45_NATURAL_FREQ, damp=_GD45_DAMPING)
+    paz = corn_freq_2_paz(fc=channel.natural_frequency, damp=channel.damping)
 
     paz_stage = PolesZerosResponseStage(
         stage_sequence_number=1,
-        stage_gain=sensitivity,
-        stage_gain_frequency=_GD45_NATURAL_FREQ,
+        stage_gain=channel.sensitivity,
+        stage_gain_frequency=channel.natural_frequency,
         input_units="M/S",
         output_units="V",
         pz_transfer_function_type="LAPLACE (RADIANS/SECOND)",
-        normalization_frequency=_GD45_NATURAL_FREQ,
+        normalization_frequency=channel.natural_frequency,
         normalization_factor=paz['gain'],
         zeros=paz['zeros'],
         poles=paz['poles'],
@@ -83,7 +83,7 @@ def _build_channel_response(settings: Settings, sensitivity: float, analog_gain:
     # NEW — instrumentation amplifier stage
     amp_stage = ResponseStage(
         stage_sequence_number=2,
-        stage_gain=analog_gain,
+        stage_gain=channel.analog_gain,
         stage_gain_frequency=0.0,
         input_units="V",
         output_units="V",
@@ -100,7 +100,7 @@ def _build_channel_response(settings: Settings, sensitivity: float, analog_gain:
     return Response(
         instrument_sensitivity=InstrumentSensitivity(
             value=total_sensitivity,
-            frequency=_GD45_NATURAL_FREQ,
+            frequency=channel.natural_frequency,
             input_units="M/S",
             output_units="COUNTS",
             input_units_description="Velocity in meters per second",
@@ -121,7 +121,7 @@ def _build_inventory(settings: Settings) -> Inventory:
                 f"Must be one of: {list(_ORIENTATION_MAP)}"
             )
 
-        response = _build_channel_response(settings, ch.sensitivity, ch.analog_gain)
+        response = _build_channel_response(settings, ch)
 
         channels.append(
             Channel(
@@ -205,7 +205,7 @@ def _close_and_append_epochs(
                         f"Must be one of: {list(_ORIENTATION_MAP)}"
                     )
 
-                response = _build_channel_response(settings, ch.sensitivity, ch.analog_gain)
+                response = _build_channel_response(settings, ch)
 
                 station.channels.append(
                     Channel(
