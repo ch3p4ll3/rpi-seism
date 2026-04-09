@@ -9,7 +9,7 @@ from rpi_seism_common.settings import Settings
 
 from src.logger import configure_logger
 from src.station_xml import ensure_station_xml
-from src.jobs import Reader, MSeedWriter, WebSocketSender, TriggerProcessor, NotifierSender
+from src.jobs import Reader, MSeedWriter, WebSocketSender, TriggerProcessor, NotifierSender, RingServerSender
 
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,12 @@ def main():
     websocket_queue = Queue()
     trigger_queue = Queue()
     notifier_queue = Queue()
+    ringserver_queue = Queue()
 
     # Create and start the Reader job thread (reads from ADC, puts data in the queues)
     reader_job = Reader(
         settings,
-        [msed_writer_queue, websocket_queue, trigger_queue, notifier_queue],
+        [msed_writer_queue, websocket_queue, trigger_queue, notifier_queue, ringserver_queue],
         shutdown_event
     )
     reader_job.start()
@@ -83,7 +84,7 @@ def main():
     )
     trigger_processor_job.start()
 
-        # Create and start the NotifierSender job thread (sends earthquake notifications)
+    # Create and start the NotifierSender job thread (sends earthquake notifications)
     notifier_job = NotifierSender(
         settings,
         notifier_queue,
@@ -91,6 +92,15 @@ def main():
         earthquake_event
     )
     notifier_job.start()
+
+
+    # TODO: use is enabled flag to start or not the thread
+    ringserver_job = RingServerSender(
+        settings,
+        ringserver_queue,
+        shutdown_event
+    )
+    ringserver_job.start()
 
 
     # Gracefully stop all threads
@@ -101,6 +111,7 @@ def main():
     websocket_job.join()
     trigger_processor_job.join()
     notifier_job.join()
+    ringserver_job.join()
 
     logger.debug("All threads stopped and the main script has finished.")
 
