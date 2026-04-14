@@ -42,7 +42,7 @@ def _fingerprint(settings: Settings) -> str:
         "network":  settings.station.network,
         "station":  settings.station.station,
         "sampling_rate": settings.mcu.sampling_rate,
-        "adc_gain": settings.mcu.adc_gain,
+        "adc_gain": settings.mcu.adc_gain_value,
         "vref":     settings.mcu.vref,
         "channels": [
             {
@@ -61,8 +61,10 @@ def _fingerprint(settings: Settings) -> str:
 
 
 def _build_channel_response(settings: Settings, channel: SettingsChannel) -> Response:
-    counts_per_volt = (settings.mcu.adc_gain * 2**23) / settings.mcu.vref
+    counts_per_volt = (settings.mcu.adc_gain_value * 2**23) / settings.mcu.vref
     total_sensitivity = channel.sensitivity * channel.analog_gain * counts_per_volt
+
+    print(f"Building response for channel {channel.name}: counts_per_volt={counts_per_volt:.2f}, total_sensitivity={total_sensitivity:.2f}")
 
     # Compute PAZ analytically from f0 and damping via ObsPy.
     paz = corn_freq_2_paz(fc=channel.natural_frequency, damp=channel.damping)
