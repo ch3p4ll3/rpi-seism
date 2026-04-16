@@ -16,7 +16,7 @@ class Sample:
     ch1: int
     ch2: int
     unix_sec: int    # GPS UTC seconds; 0 = no fix
-    unix_usec: int   # microseconds within that second
+    unix_usec: int   # microseconds within that second. 0 = no pps lock
     crc: int
 
     # The format string for struct (little-endian, unsigned chars and ints)
@@ -26,7 +26,7 @@ class Sample:
     @property
     def gps_locked(self) -> bool:
         """True when the MCU had a valid GPS fix when this packet was built."""
-        return self.unix_sec >= 0
+        return self.unix_sec > 0 and self.unix_usec > 0
 
     @property
     def unix_timestamp(self) -> float:
