@@ -127,17 +127,20 @@ class MSeedWriter(Thread):
                 trace.stats.starttime    = slice_start
                 trace.stats.sampling_rate = sampling_rate
 
-                path = sds_path(self.output_dir, network, station, location_code, ch_name, slice_start)
-                path.parent.mkdir(parents=True, exist_ok=True)
+                data_path = sds_path(self.output_dir, network, station, location_code, ch_name, slice_start)
+                data_path.parent.mkdir(parents=True, exist_ok=True)
+
+                plot_path = sds_path(self.output_dir, network, station, location_code, ch_name, slice_start, plot=True)
+                plot_path.parent.mkdir(parents=True, exist_ok=True)
 
                 stream = Stream([trace])
 
-                self._write_trace(path, stream)
+                self._write_trace(data_path, plot_path, stream)
 
         self._buffer.clear()
         self._start_time = None
 
-    def _write_trace(self, path: Path, new_stream: Stream):
+    def _write_trace(self, path: Path, plot_path: Path, new_stream: Stream):
         if path.exists():
             existing = read(str(path))
             combined = existing + new_stream
@@ -147,6 +150,33 @@ class MSeedWriter(Thread):
                          sum(len(tr.data) for tr in existing),
                          sum(len(tr.data) for tr in new_stream),
                          path.name)
+            self._generate_dayplot(combined, plot_path)
         else:
             new_stream.write(str(path), format="MSEED", reclen=512)
+            self._generate_dayplot(new_stream, plot_path)
             logger.info("Created %s", path.name)
+
+    def _generate_dayplot(self, st: Stream, data_path: Path):
+        plot_st = st.copy()
+
+        plot_st.detrend("linear")
+        plot_st.taper(max_percentage=0.05)
+        plot_st.filter("bandpass", freqmin=0.2, freqmax=40)
+
+        plot_filename = data_path.with_suffix(".png")
+
+        tr = plot_st[0]
+        header = tr.stats
+        year = header.starttime.strftime('%Y')
+        jday = header.starttime.strftime('%j')
+
+        plot_st.plot(
+            type="dayplot", 
+            interval=15, 
+            right_vertical_labels=False, 
+            number_of_ticks=7, 
+            one_tick_per_line=True, 
+            color=['black', 'red', 'blue', 'green'],
+            title=f"Helicorder: {tr.id} | Year: {year} | Day: {jday}",
+            outfile=str(plot_filename)
+        )
