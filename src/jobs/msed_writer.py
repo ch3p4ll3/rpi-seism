@@ -147,6 +147,28 @@ class MSeedWriter(Thread):
                          sum(len(tr.data) for tr in existing),
                          sum(len(tr.data) for tr in new_stream),
                          path.name)
+            self._generate_dayplot(combined, path)
         else:
             new_stream.write(str(path), format="MSEED", reclen=512)
+            self._generate_dayplot(new_stream, path)
             logger.info("Created %s", path.name)
+
+    def _generate_dayplot(self, st: Stream, data_path: Path):
+        plot_st = st.copy()
+
+        plot_st.detrend("linear")
+        plot_st.taper(max_percentage=0.05)
+        plot_st.filter("bandpass", freqmin=0.2, freqmax=40)
+
+        plot_filename = data_path.with_suffix(".png")
+
+        plot_st.plot(
+            type="dayplot", 
+            interval=15, 
+            right_vertical_labels=False, 
+            number_of_ticks=7, 
+            one_tick_per_line=True, 
+            color=['black', 'red', 'blue', 'green'],
+            title=f"Helicorder for {plot_st[0].id}",
+            outfile=str(plot_filename)
+        )

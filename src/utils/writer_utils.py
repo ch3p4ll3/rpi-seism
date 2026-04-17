@@ -19,7 +19,7 @@ def sds_path(archive_root: Path, network: str, station: str,
     """
     filename = (
         f"{network}.{station}.{location_code}.{channel}"
-        f".D.{t.year}.{t.julday:03d}"
+        f".D.{t.year}.{t.julday:03d}.mseed"
     )
     return archive_root / "archive" / str(t.year) / network / station / f"{channel}.D" / filename
 
