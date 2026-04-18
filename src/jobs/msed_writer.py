@@ -187,7 +187,7 @@ class MSeedWriter(Process):
             type="dayplot",
             color=['black', 'red', 'blue', 'green'],
             title=f"Helicorder: {tr.id} | Year: {year} | Day: {jday}",
-            size=(2400, 1800),
-            dpi=300,
+            size=(1600, 1200),
+            dpi=200,
             outfile=str(plot_filename)
         )
