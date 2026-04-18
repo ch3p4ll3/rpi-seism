@@ -184,8 +184,10 @@ class MSeedWriter(Process):
         jday = header.starttime.strftime('%j')
 
         plot_st.plot(
-            type="dayplot", 
+            type="dayplot",
             color=['black', 'red', 'blue', 'green'],
             title=f"Helicorder: {tr.id} | Year: {year} | Day: {jday}",
+            size=(2400, 1800),
+            dpi=300,
             outfile=str(plot_filename)
         )
