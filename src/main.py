@@ -1,83 +1,97 @@
-import signal
 import logging
-import multiprocessing  # Replaces threading
+import multiprocessing
+import signal
+import time
 from pathlib import Path
+
 from rpi_seism_common.settings import Settings
 
-# Existing internal imports
+# Internal imports for the new Process Containers
 from src.logger import configure_logger
+from src.processes.managers import Managers
+from src.processes.plotters import Plotters
+from src.processes.producers import Producers
 from src.station_xml import ensure_station_xml
-from src.jobs import Reader, MSeedWriter, WebSocketSender, TriggerProcessor, NotifierSender, RingServerSender
 
 logger = logging.getLogger(__name__)
 
+
 def main():
+    # 1. Setup paths and settings
     data_base_folder = Path(__file__).parent.parent / "data"
     settings = Settings.load_settings(data_base_folder / "config.yml")
     configure_logger(data_base_folder)
     ensure_station_xml(settings, data_base_folder / "station.xml")
 
-    # Use Multiprocessing Manager for shared objects
-    # This allows processes to update the same Event/Tracker
+    # 2. Shared primitives
+    # Manager handles cross-process sync for the Events and Queue
     manager = multiprocessing.Manager()
-    
+
     shutdown_event = manager.Event()
     earthquake_event = manager.Event()
+    plot_queue = manager.Queue()
 
-    # Define the ZMQ Address
-    # IPC is perfect for Raspberry Pi (low overhead, no network needed)
+    # Define the ZMQ Address for IPC
     ZMQ_ADDR = "ipc:///tmp/seism_hub.ipc"
 
+    # 3. Signal Handling
     def handle_exit(sig, frame):
-        logger.debug("Exit signal %s received. Shutting down...", sig)
-        shutdown_event.set()
+        if not shutdown_event.is_set():
+            logger.info(f"Signal {sig} received. Initiating graceful shutdown...")
+            shutdown_event.set()
 
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
 
-    # Initialize Jobs as Processes
-    # We no longer need to build a list of Queues!
-    
-    jobs = []
+    # 4. Initialize the 3 Process Containers
+    # Each of these encapsulates multiple threads/tasks
 
-    # The Producer (The only one that Binds the socket)
-    reader_job = Reader(
+    producers = Producers(
         settings,
+        data_base_folder,
         shutdown_event,
-        ZMQ_ADDR
+        earthquake_event,
+        plot_queue,
+        ZMQ_ADDR,
     )
-    jobs.append(reader_job)
 
-    # The Consumers (All connect to the same ZMQ_ADDR)
-    jobs.append(MSeedWriter(settings, data_base_folder, shutdown_event, earthquake_event, ZMQ_ADDR))
-    jobs.append(WebSocketSender(settings, shutdown_event, earthquake_event, ZMQ_ADDR))
-    jobs.append(TriggerProcessor(settings, shutdown_event, earthquake_event, ZMQ_ADDR))
+    managers = Managers(settings, shutdown_event, earthquake_event, ZMQ_ADDR)
 
-    if any(x.enabled for x in settings.jobs_settings.notifiers):
-        jobs.append(NotifierSender(settings, shutdown_event, earthquake_event, ZMQ_ADDR))
+    plotters = Plotters(plot_queue, shutdown_event)
 
-    if settings.jobs_settings.ring_server.enabled:
-        jobs.append(RingServerSender(settings, shutdown_event, ZMQ_ADDR))
+    all_processes = [producers, managers, plotters]
 
-    # Start all processes
-    for job in jobs:
-        job.start()
+    # 5. Start Execution
+    logger.info("Launching Seismic Stack (3-Process Architecture)...")
+    for p in all_processes:
+        p.start()
 
-    # Wait for the Reader to finish (triggered by shutdown_event)
+    # 6. Monitor and Wait
     try:
-        reader_job.join()
+        # Keep main alive while the core producer is running
+        while not shutdown_event.is_set():
+            if not producers.is_alive():
+                logger.error("Producers process died! Shutting down system.")
+                shutdown_event.set()
+                break
+            time.sleep(1)
+
     except KeyboardInterrupt:
         shutdown_event.set()
+    finally:
+        logger.info("Cleaning up processes...")
 
-    # Wait for all other workers
-    for job in jobs:
-        if job.is_alive():
-            job.join(timeout=2)
-            job.terminate() # Force kill if they don't exit gracefully
+        # Give processes a moment to finish their loops
+        for p in all_processes:
+            p.join(timeout=30)
+            if p.is_alive():
+                logger.warning(f"Process {p.name} refused to exit. Terminating...")
+                p.terminate()
 
-    logger.debug("All processes stopped. Main script finished.")
+    logger.info("Main script finished.")
+
 
 if __name__ == "__main__":
-    # Crucial for multiprocessing on some OS/Pi distros
-    multiprocessing.set_start_method('spawn', force=True)
+    # 'spawn' is safest for hardware and ZMQ inside Docker
+    multiprocessing.set_start_method("spawn", force=True)
     main()

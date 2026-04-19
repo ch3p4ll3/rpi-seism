@@ -1,7 +1,8 @@
-from multiprocessing import Process, Event
+from multiprocessing import Event
 from io import BytesIO
 from collections import deque
 from logging import getLogger
+from threading import Thread
 import time
 from datetime import datetime
 
@@ -20,7 +21,7 @@ from rpi_seism_common.settings import Settings
 logger = getLogger(__name__)
 
 
-class NotifierSender(Process):
+class NotifierSender(Thread):
     def __init__(
         self,
         settings: Settings,

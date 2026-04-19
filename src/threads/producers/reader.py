@@ -1,4 +1,5 @@
-from multiprocessing import Event, Process
+from multiprocessing import Event
+from threading import Thread
 from logging import getLogger
 
 from rpi_seism_common.settings import Settings
@@ -15,7 +16,7 @@ from src.utils.soh_tracker import SOHTracker
 logger = getLogger(__name__)
 
 
-class Reader(Process):
+class Reader(Thread):
     """
     Thread that continuously reads from the RS-422 serial port,
     processes incoming packets, and distributes data to queues.

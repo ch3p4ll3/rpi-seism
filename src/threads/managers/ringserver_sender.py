@@ -1,4 +1,5 @@
-from multiprocessing import Process, Event
+from multiprocessing import Event
+from threading import Thread
 
 import zmq
 import time
@@ -14,7 +15,7 @@ from datalink_client import DataLink, DataLinkError
 logger = getLogger(__name__)
 
 
-class RingServerSender(Process):
+class RingServerSender(Thread):
     def __init__(
             self,
             settings: Settings,

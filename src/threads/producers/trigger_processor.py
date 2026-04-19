@@ -1,5 +1,6 @@
 from collections import deque
-from multiprocessing import Process, Event
+from multiprocessing import Event
+from threading import Thread
 from logging import getLogger
 
 import numpy as np
@@ -13,7 +14,7 @@ from rpi_seism_common.settings import Settings
 logger = getLogger(__name__)
 
 
-class TriggerProcessor(Process):
+class TriggerProcessor(Thread):
     """
     Thread that processes incoming seismic data packets using ObsPy's recursive STA/LTA.
     Uses a rolling buffer to maintain the state required for the algorithm.
@@ -60,6 +61,8 @@ class TriggerProcessor(Process):
         sub_socket = context.socket(zmq.SUB)
         sub_socket.connect(self.zmq_endpoint)
         sub_socket.setsockopt_string(zmq.SUBSCRIBE, "") # Receive everything
+
+        sub_socket.setsockopt(zmq.RCVTIMEO, 100)  # 100ms timeout
 
         while not self.shutdown_event.is_set():
             try:
