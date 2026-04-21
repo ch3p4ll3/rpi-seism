@@ -44,6 +44,7 @@ class Reader(Process):
         # Initialize ZeroMQ
         context = zmq.Context()
         self.pub_socket = context.socket(zmq.PUB)
+        self.pub_socket.set(zmq.SNDHWM, 18000)  # 100 Hz * 3 channels * 60 sec = 18000 packets before we start dropping data
         self.pub_socket.bind(self.zmq_endpoint)
 
         try:

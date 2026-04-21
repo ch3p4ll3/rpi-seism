@@ -59,6 +59,7 @@ class MSeedWriter(Thread):
 
         context = zmq.Context()
         sub_socket = context.socket(zmq.SUB)
+        sub_socket.set(zmq.RCVHWM, 18000)  # 100 Hz * 3 channels * 60 sec = 18000 packets before we start dropping data
         sub_socket.connect(self.zmq_endpoint)
         sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Receive everything
 
