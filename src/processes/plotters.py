@@ -1,4 +1,5 @@
 import logging
+import time
 from multiprocessing import Event, Process, Queue
 from pathlib import Path
 
@@ -10,6 +11,8 @@ class Plotters(Process):
         super().__init__(name="PlottersProcess")
         self.plot_queue = plot_queue
         self.shutdown_event = shutdown_event
+
+        self.last_shutdown_event = 0
 
     def run(self):
         """
@@ -26,8 +29,20 @@ class Plotters(Process):
 
         logger.info("Starting Plotters Process (DayPlotWorker)")
 
+        shutdown_triggered_time = None
+
+        # We want to allow the plotter to continue processing any remaining tasks for a short time after shutdown is triggered
         while True:
             try:
+                if self.shutdown_event.is_set():
+                    if shutdown_triggered_time is None:
+                        shutdown_triggered_time = time.time()
+                        logger.info("Shutdown signaled. Draining queue for up to 10 seconds.")
+                    
+                    # Stop if 10 seconds have passed since shutdown was triggered
+                    if time.time() - shutdown_triggered_time > 10:
+                        logger.info("Grace period expired. Force closing plotter.")
+                        break
                 # We use a timeout so we can check the shutdown_event periodically
                 task = self.plot_queue.get(timeout=1.0)
 

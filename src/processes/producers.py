@@ -25,11 +25,11 @@ class Producers(Process):
         self.zmq_addr = zmq_addr
 
     def run(self):
-        from src.threads.producers import MSeedWriter, Reader, TriggerProcessor
+        from src.threads.producers import MSeedWriter, TriggerProcessor, WebSocketSender
 
         logger.info("Starting Producers Process (Reader + Trigger + Writer)")
 
-        reader_job = Reader(self.settings, self.shutdown_event, self.zmq_addr)
+        jobs = []
 
         writer_job = MSeedWriter(
             self.settings,
@@ -39,36 +39,29 @@ class Producers(Process):
             self.plot_queue,
             self.zmq_addr,
         )
+        jobs.append(writer_job)
 
         trigger_job = TriggerProcessor(
             self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
         )
+        jobs.append(trigger_job)
 
-        reader_job.start()
-        writer_job.start()
-        trigger_job.start()
+        websocket_job = WebSocketSender(
+            self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
+        )
+        jobs.append(websocket_job)
+
+        for job in jobs:
+            job.start()
 
         try:
             # Monitor threads while checking for the global shutdown signal
             while not self.shutdown_event.is_set():
-                # Timeout-based joins to keep the loop responsive
-                reader_job.join(timeout=0.1)
-                writer_job.join(timeout=0.1)
-                trigger_job.join(timeout=0.1)
-
-                # Check for actual crashes
-                if not self.shutdown_event.is_set():
-                    dead_threads = []
-
-                    if not reader_job.is_alive():
-                        dead_threads.append("Reader")
-                    if not writer_job.is_alive():
-                        dead_threads.append("Writer")
-                    if not trigger_job.is_alive():
-                        dead_threads.append("Trigger")
-                    
-                    if dead_threads:
-                        logger.error(f"Producer thread(s) died unexpectedly: {', '.join(dead_threads)}")
+                for job in jobs:
+                    job.join(timeout=0.1)
+                    if not job.is_alive() and not self.shutdown_event.is_set():
+                        logger.error(f"Manager thread {job.name} died unexpectedly")
+                        self.shutdown_event.set()  # Kill everything if a core thread dies
                         break
 
         except Exception:
@@ -76,7 +69,9 @@ class Producers(Process):
             self.shutdown_event.set()
         finally:
             logger.info("Cleaning up Producer threads...")
-            reader_job.join(timeout=2.0)
-            writer_job.join(timeout=20)
-            trigger_job.join(timeout=2.0)
+            for job in jobs:
+                if job.is_alive() and isinstance(job, MSeedWriter):
+                    job.join(timeout=30.0)
+                else:
+                    job.join(timeout=5.0)
             logger.info("Producers process stopped.")

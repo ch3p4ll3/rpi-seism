@@ -11,6 +11,7 @@ from src.logger import configure_logger
 from src.processes.managers import Managers
 from src.processes.plotters import Plotters
 from src.processes.producers import Producers
+from src.processes.reader import Reader
 from src.station_xml import ensure_station_xml
 
 logger = logging.getLogger(__name__)
@@ -40,8 +41,10 @@ def main():
     signal.signal(signal.SIGTERM, handle_exit)
     signal.signal(signal.SIGINT, handle_exit)
 
-    # 4. Initialize the 3 Process Containers
+    # Initialize the 4 Process Containers
     # Each of these encapsulates multiple threads/tasks
+
+    reader = Reader(settings, shutdown_event, ZMQ_ADDR)
 
     producers = Producers(
         settings,
@@ -56,10 +59,10 @@ def main():
 
     plotters = Plotters(plot_queue, shutdown_event)
 
-    all_processes = [producers, managers, plotters]
+    all_processes = [reader, producers, managers, plotters]
 
     # 5. Start Execution
-    logger.info("Launching Seismic Stack (3-Process Architecture)...")
+    logger.info("Launching Seismic Stack (4-Process Architecture)...")
     for p in all_processes:
         p.start()
 

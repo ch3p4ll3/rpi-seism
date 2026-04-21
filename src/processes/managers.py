@@ -17,19 +17,13 @@ class Managers(Process):
     def run(self):
         from src.threads.managers import (
             NotifierSender,
-            RingServerSender,
-            WebSocketSender,
+            RingServerSender
         )
 
-        logger.info("Starting Managers Process (Notifier + RingServer + Websocket)")
+        logger.info("Starting Managers Process (Notifier + RingServer)")
 
         # Initialize jobs
         jobs = []
-
-        websocket_job = WebSocketSender(
-            self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
-        )
-        jobs.append(websocket_job)
 
         if any(x.enabled for x in self.settings.jobs_settings.notifiers):
             notifier_job = NotifierSender(

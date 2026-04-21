@@ -1,33 +1,32 @@
-from multiprocessing import Event
-from threading import Thread
-from logging import getLogger
-
-from rpi_seism_common.settings import Settings
 import time
+from logging import getLogger
+from multiprocessing import Event, Process
+
 import serial
 import zmq
+from rpi_seism_common.settings import Settings
 
 from src.exception.mcu_no_response import MCUNoResponse
-from src.structs.sample import Sample
 from src.structs.mcu_settings import MCUSettingsFrame
-
+from src.structs.sample import Sample
 from src.utils.soh_tracker import SOHTracker
 
 logger = getLogger(__name__)
 
 
-class Reader(Thread):
+class Reader(Process):
     """
-    Thread that continuously reads from the RS-422 serial port,
+    Process that continuously reads from the RS-422 serial port,
     processes incoming packets, and distributes data to queues.
     """
+
     def __init__(
         self,
         settings: Settings,
         shutdown_event: Event = None,
-        zmq_endpoint: str = "ipc:///tmp/seismic_data.ipc"
+        zmq_endpoint: str = "ipc:///tmp/seismic_data.ipc",
     ):
-        super().__init__()
+        super().__init__(name="ReaderProcess")
         self.port = settings.jobs_settings.reader.port
         self.settings = settings
         self.zmq_endpoint = zmq_endpoint
@@ -60,8 +59,8 @@ class Reader(Thread):
                 while not self.shutdown_event.is_set():
                     # send Heartbeat to keep Arduino streaming
                     if time.time() - self.last_heartbeat > self.heartbeat_interval:
-                        ser.write(b'\x01')         # Send pulse
-                        ser.flush()                # Wait for bits to leave the UART
+                        ser.write(b"\x01")  # Send pulse
+                        ser.flush()  # Wait for bits to leave the UART
                         self.last_heartbeat = time.time()
 
                     # read available data
@@ -72,18 +71,20 @@ class Reader(Thread):
                     while len(buffer) >= Sample.PACKET_SIZE:
                         # Look for headers 0xAA 0xBB
                         if buffer[0] == 0xAA and buffer[1] == 0xBB:
-                            packet_data = buffer[:Sample.PACKET_SIZE]
+                            packet_data = buffer[: Sample.PACKET_SIZE]
 
                             sample, checksum = Sample.from_bytes(packet_data)
                             if checksum:
                                 self._process_packet(sample)
                                 self.soh_tracker.record_success()
-                                del buffer[:Sample.PACKET_SIZE] # Remove processed packet
+                                del buffer[
+                                    : Sample.PACKET_SIZE
+                                ]  # Remove processed packet
                             else:
                                 logger.warning("Checksum failed, shifting buffer")
                                 self.soh_tracker.record_checksum_error()
                                 self.soh_tracker.record_dropped_bytes(1)
-                                del buffer[0] # Slide window to find next header
+                                del buffer[0]  # Slide window to find next header
                         else:
                             # Not a header, discard byte and keep looking
                             self.soh_tracker.record_dropped_bytes(1)
@@ -111,20 +112,19 @@ class Reader(Thread):
         self.pub_socket.send_pyobj(packet)
 
     def __map_channels(self):
-        return {
-            i.adc_channel: i
-            for i in self.settings.channels
-        }
+        return {i.adc_channel: i for i in self.settings.channels}
 
     def _sendSettings(self, ser: serial.Serial):
-        time.sleep(2)   # Wait to arduino to reboot
-        sent_bytes = MCUSettingsFrame.from_settings(self.settings).to_bytes()  # This should be your 6-byte packet
+        time.sleep(2)  # Wait to arduino to reboot
+        sent_bytes = MCUSettingsFrame.from_settings(
+            self.settings
+        ).to_bytes()  # This should be your 6-byte packet
 
-        logger.info("Sending settings to MCU: %s", sent_bytes.hex(' '))
+        logger.info("Sending settings to MCU: %s", sent_bytes.hex(" "))
 
         # Transmit
         ser.write(sent_bytes)
-        ser.flush()                # Block until UART buffer is physically empty
+        ser.flush()  # Block until UART buffer is physically empty
 
         # Wait for Echo/Response
         logger.info("Waiting for MCU confirmation...")
@@ -137,9 +137,9 @@ class Reader(Thread):
             if ser.in_waiting >= MCUSettingsFrame.PACKET_SIZE:
                 # Check for header alignment
                 potential_header = ser.read(1)
-                if potential_header == b'\xcc':
+                if potential_header == b"\xcc":
                     next_byte = ser.read(1)
-                    if next_byte == b'\xdd':
+                    if next_byte == b"\xdd":
                         # We found the start! Read the remaining bytes (MCUSettingsFrame.PACKET_SIZE - 2)
                         remaining = ser.read(MCUSettingsFrame.PACKET_SIZE - 2)
                         response = potential_header + next_byte + remaining
