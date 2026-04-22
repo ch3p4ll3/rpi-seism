@@ -3,12 +3,15 @@ import time
 from multiprocessing import Event, Process, Queue
 from pathlib import Path
 
+from rpi_seism_common.settings import Settings
+
 logger = logging.getLogger(__name__)
 
 
 class Plotters(Process):
-    def __init__(self, plot_queue: Queue, shutdown_event: Event):
+    def __init__(self, settings: Settings, plot_queue: Queue, shutdown_event: Event):
         super().__init__(name="PlottersProcess")
+        self.settings = settings.jobs_settings.dayplot
         self.plot_queue = plot_queue
         self.shutdown_event = shutdown_event
 
@@ -19,13 +22,15 @@ class Plotters(Process):
         The Heavy Lifter.
         Imports are local to keep the main process and other processes light.
         """
+        if not self.settings.enabled:
+            return
+
         import matplotlib
 
         matplotlib.use("Agg")
 
         from queue import Empty
         # Internal import to avoid memory bloat in other processes
-        # from src.jobs.plotter import DayPlotWriter
 
         logger.info("Starting Plotters Process (DayPlotWorker)")
 
@@ -37,10 +42,15 @@ class Plotters(Process):
                 if self.shutdown_event.is_set():
                     if shutdown_triggered_time is None:
                         shutdown_triggered_time = time.time()
-                        logger.info("Shutdown signaled. Draining queue for up to 10 seconds.")
-                    
+                        logger.info(
+                            "Shutdown signaled. Draining queue for up to 10 seconds."
+                        )
+
                     # Stop if 10 seconds have passed since shutdown was triggered
-                    if time.time() - shutdown_triggered_time > 10:
+                    if (
+                        time.time() - shutdown_triggered_time
+                        > self.settings.shutdown_timeout
+                    ):
                         logger.info("Grace period expired. Force closing plotter.")
                         break
                 # We use a timeout so we can check the shutdown_event periodically
@@ -52,7 +62,9 @@ class Plotters(Process):
 
                 # ADD THIS CHECK:
                 if not isinstance(task, dict):
-                    logger.warning(f"Plotter received invalid task type: {type(task)} value: {task}")
+                    logger.warning(
+                        f"Plotter received invalid task type: {type(task)} value: {task}"
+                    )
                     continue
 
                 self._generate_dayplot(task["mseed_path"], task["plot_path"])
@@ -74,7 +86,11 @@ class Plotters(Process):
             st = read(str(data_path))
             st.detrend("linear")
             st.taper(max_percentage=0.05)
-            st.filter("bandpass", freqmin=0.2, freqmax=40)
+            st.filter(
+                "bandpass",
+                freqmin=self.settings.low_cutoff,
+                freqmax=self.settings.high_cutoff,
+            )
 
             plot_filename = Path(plot_path).with_suffix(".png")
             tr = st[0]

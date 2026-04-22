@@ -54,7 +54,7 @@ class RingServerSender(Thread):
 
             # Consume Queue
             try:
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") != "packet":
                     continue

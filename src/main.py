@@ -57,9 +57,12 @@ def main():
 
     managers = Managers(settings, shutdown_event, earthquake_event, ZMQ_ADDR)
 
-    plotters = Plotters(plot_queue, shutdown_event)
+    all_processes = [reader, producers, managers]
 
-    all_processes = [reader, producers, managers, plotters]
+    if settings.jobs_settings.dayplot.enabled:
+        plotters = Plotters(settings, plot_queue, shutdown_event)
+        all_processes.append(plotters)
+
 
     # 5. Start Execution
     logger.info("Launching Seismic Stack (4-Process Architecture)...")

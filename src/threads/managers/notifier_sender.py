@@ -56,7 +56,7 @@ class NotifierSender(Thread):
         while not self.shutdown_event.is_set():
             try:
                 try:
-                    packet = sub_socket.recv_pyobj()
+                    packet = sub_socket.recv_json()
                     if packet.get("type") == "packet":
                         self.buffer.append(packet)
                 except zmq.Again:

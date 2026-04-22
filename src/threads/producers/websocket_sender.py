@@ -84,7 +84,7 @@ class WebSocketSender(Thread):
             try:
                 # Expecting: {"timestamp": float, "measurements": [{"channel": obj, "value": int}, ...]}
                 packet = await asyncio.wait_for(
-                    self.sub_socket.recv_pyobj(), timeout=1.0
+                    self.sub_socket.recv_json(), timeout=1.0
                 )
 
                 # Filter for packets

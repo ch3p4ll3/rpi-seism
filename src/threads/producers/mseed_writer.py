@@ -75,7 +75,7 @@ class MSeedWriter(Thread):
 
             try:
                 # Receive one packet at a time
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") == "packet":
                     ts = packet["timestamp"]
@@ -108,7 +108,8 @@ class MSeedWriter(Thread):
 
         # Final flush on shutdown
         self._flush()
-        self.plot_queue.put(None)
+        if self.settings.jobs_settings.dayplot.enabled:
+            self.plot_queue.put(None)
         sub_socket.close()
         context.term()
 
@@ -187,11 +188,12 @@ class MSeedWriter(Thread):
             new_stream.write(str(path), format="MSEED", reclen=512)
             logger.info("Created %s", path.name)
 
-        try:
-            self.plot_queue.put_nowait(
-                {"mseed_path": str(path), "plot_path": str(plot_path)}
-            )
-        except Full:
-            logger.warning(
-                "Plot queue full! Skipping this plot to keep data saving alive."
-            )
+        if self.settings.jobs_settings.dayplot.enabled:
+            try:
+                self.plot_queue.put_nowait(
+                    {"mseed_path": str(path), "plot_path": str(plot_path)}
+                )
+            except Full:
+                logger.warning(
+                    "Plot queue full! Skipping this plot to keep data saving alive."
+                )
