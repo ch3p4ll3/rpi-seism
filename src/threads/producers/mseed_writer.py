@@ -75,7 +75,7 @@ class MSeedWriter(Thread):
 
             try:
                 # Receive one packet at a time
-                packet = sub_socket.recv_json()
+                packet = sub_socket.recv_pyobj()
 
                 if packet.get("type") == "packet":
                     ts = packet["timestamp"]
