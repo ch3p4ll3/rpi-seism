@@ -1,23 +1,17 @@
-from datetime import datetime, UTC, timedelta
 import time
-
-from threading import Thread, Event
+from datetime import UTC, datetime, timedelta
 from logging import getLogger
+from threading import Event, Thread
 
 from obspy import read_events
-import requests
 from rpi_seism_common.settings import Settings
-
 
 logger = getLogger(__name__)
 
 
 class AutomaticBookmarkCreator(Thread):
     def __init__(
-        self,
-        settings: Settings,
-        shutdown_event: Event,
-        earthquake_event: Event
+        self, settings: Settings, shutdown_event: Event, earthquake_event: Event
     ):
         super().__init__()
         self.earthquake_event = earthquake_event
@@ -41,7 +35,7 @@ class AutomaticBookmarkCreator(Thread):
 
                 self._request_events()
 
-                time.sleep(.5)
+                time.sleep(0.5)
             except Exception:
                 logger.exception("Error in Trigger Processor loop")
 
@@ -61,14 +55,16 @@ class AutomaticBookmarkCreator(Thread):
 
             url = f"https://webservices.ingv.it/fdsnws/event/1/query?starttime={start}&endtime={end}&lat={self.settings.station.latitude}&lon={self.settings.station.longitude}&orderby=time&format=xml&includeallorigins=false&includeallmagnitudes=false&includearrivals=false"
             self._manage_events(url)
-    
+
     def _manage_events(self, url: str):
         events = read_events(url)
 
         for event in events:
             origin = event.preferred_origin()
             magnitude = event.preferred_magnitude()
-            event_descriptions = event.event_descriptions[0] if event.event_descriptions else None
+            event_descriptions = (
+                event.event_descriptions[0] if event.event_descriptions else None
+            )
 
             if origin is None:
                 continue
