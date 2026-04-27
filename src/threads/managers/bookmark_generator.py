@@ -106,7 +106,7 @@ class BookmarkGenerator(Thread):
                 start=bookmark_start,
                 end=bookmark_end,
                 units="VEL",
-            ).model_dump()
+            ).model_dump(mode="json")
 
             try:
                 req = post(request_url, json=payload)
