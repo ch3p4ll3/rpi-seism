@@ -1,123 +1,102 @@
 import logging
 import time
-from multiprocessing import Event, Process, Queue
+from multiprocessing import Event, Pool, Process, Queue
 from os import getpid
-from pathlib import Path
+from queue import Empty
 
-from rpi_seism_common.settings import Settings
-
-from src.logger import configure_worker_logging
+from src.utils.dayplot_render import render_dayplot_worker
 
 
 class Plotters(Process):
     def __init__(
         self,
-        settings: Settings,
+        settings,  # This is the Settings object
         plot_queue: Queue,
         shutdown_event: Event,
         log_queue: Queue,
     ):
         super().__init__(name="PlottersProcess")
-        self.settings = settings.jobs_settings.dayplot
+        # Extract settings to a serializable dict for the pool workers
+        self.settings_dict = {
+            "enabled": settings.jobs_settings.dayplot.enabled,
+            "low_cutoff": settings.jobs_settings.dayplot.low_cutoff,
+            "high_cutoff": settings.jobs_settings.dayplot.high_cutoff,
+            "shutdown_timeout": 10.0,  # 10s grace period for writer to finish
+        }
         self.plot_queue = plot_queue
         self.shutdown_event = shutdown_event
         self.log_queue = log_queue
 
-        self.last_shutdown_event = 0
-
     def run(self):
-        """
-        The Heavy Lifter.
-        Imports are local to keep the main process and other processes light.
-        """
-        if not self.settings.enabled:
+        if not self.settings_dict["enabled"]:
             return
 
-        import matplotlib
-
-        matplotlib.use("Agg")
-
-        from queue import Empty
-        # Internal import to avoid memory bloat in other processes
+        from src.logger import configure_worker_logging
 
         configure_worker_logging(self.log_queue)
-
         self.logger = logging.getLogger(__name__)
+        self.logger.info("Plotters Manager started. PID: %d", getpid())
 
-        self.logger.info("Starting Plotters Process (DayPlotWorker). PID: %d", getpid())
+        # processes=1: Do one plot at a time to save RAM
+        # maxtasksperchild=1: KILL the process after 1 task to prevent OOM
+        with Pool(processes=1, maxtasksperchild=1) as pool:
+            drain_start_time = None
+            writer_finished = False
 
-        shutdown_triggered_time = None
+            while True:
+                try:
+                    # Check for a task (1s timeout to keep loop responsive)
+                    try:
+                        task = self.plot_queue.get(timeout=1.0)
+                    except Empty:
+                        task = "EMPTY"
 
-        # We want to allow the plotter to continue processing any remaining tasks for a short time after shutdown is triggered
-        while True:
-            try:
-                if self.shutdown_event.is_set():
-                    if shutdown_triggered_time is None:
-                        shutdown_triggered_time = time.time()
+                    # Handle Writer Shutdown Sentinel (None)
+                    if task is None:
                         self.logger.info(
-                            "Shutdown signaled. Draining queue for up to 10 seconds."
+                            "Writer finished signal received. Draining for 10s..."
+                        )
+                        writer_finished = True
+                        drain_start_time = time.time()
+                        continue
+
+                    # Handle actual plot tasks
+                    if isinstance(task, dict):
+                        pool.apply_async(
+                            render_dayplot_worker,
+                            args=(task, self.settings_dict),
+                            callback=self.logger.info,  # Logs the success string from worker
                         )
 
-                    # Stop if 10 seconds have passed since shutdown was triggered
-                    if (
-                        time.time() - shutdown_triggered_time
-                        > self.settings.shutdown_timeout
-                    ):
-                        self.logger.info("Grace period expired. Force closing plotter.")
-                        break
-                # We use a timeout so we can check the shutdown_event periodically
-                task = self.plot_queue.get(timeout=1.0)
+                    # Case A: Writer sent 'None', wait 10s for final data to clear
+                    if writer_finished:
+                        if (
+                            time.time() - drain_start_time
+                            > self.settings_dict["shutdown_timeout"]
+                        ):
+                            self.logger.info("Grace period complete. Closing Pool.")
+                            break
 
-                if task is None:
-                    self.logger.debug("Received None, stopping process")
-                    break
+                    # Case B: Global shutdown event (Ctrl+C), fallback timer
+                    elif self.shutdown_event.is_set():
+                        if drain_start_time is None:
+                            drain_start_time = time.time()
+                            self.logger.warning(
+                                "Global shutdown. Waiting 10s for writer cleanup..."
+                            )
 
-                # ADD THIS CHECK:
-                if not isinstance(task, dict):
-                    self.logger.warning(
-                        f"Plotter received invalid task type: {type(task)} value: {task}"
-                    )
-                    continue
+                        if (
+                            time.time() - drain_start_time
+                            > self.settings_dict["shutdown_timeout"]
+                        ):
+                            self.logger.info("Safety timeout reached. Force closing.")
+                            break
 
-                self._generate_dayplot(task["mseed_path"], task["plot_path"])
+                except Exception:
+                    self.logger.exception("Error in Plotters manager loop")
 
-            except Empty:
-                continue
-            except Exception:
-                self.logger.exception("Error in Plotters worker loop")
+            # Finalize the pool
+            pool.close()
+            pool.join()
 
         self.logger.info("Plotters process stopped.")
-
-    def _generate_dayplot(self, data_path, plot_path):
-        """
-        Actual plotting logic using Obspy.
-        """
-        import matplotlib.pyplot as plt
-        from obspy import read
-
-        try:
-            st = read(str(data_path))
-            st.detrend("linear")
-            st.taper(max_percentage=0.05)
-            st.filter(
-                "bandpass",
-                freqmin=self.settings.low_cutoff,
-                freqmax=self.settings.high_cutoff,
-            )
-
-            plot_filename = Path(plot_path).with_suffix(".png")
-            tr = st[0]
-
-            st.plot(
-                type="dayplot",
-                color=["black", "red", "blue", "green"],
-                title=f"Helicorder: {tr.id} | {tr.stats.starttime.strftime('%Y-%j')}",
-                size=(1600, 1200),
-                dpi=200,
-                outfile=str(plot_filename),
-            )
-            plt.close("all")
-
-            self.logger.info(f"Dayplot updated: {plot_filename.name}")
-        except Exception as e:
-            self.logger.error(f"Failed to generate plot for {data_path}: {e}")
