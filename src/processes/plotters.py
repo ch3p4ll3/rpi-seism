@@ -10,7 +10,13 @@ from src.logger import configure_worker_logging
 
 
 class Plotters(Process):
-    def __init__(self, settings: Settings, plot_queue: Queue, shutdown_event: Event, log_queue: Queue):
+    def __init__(
+        self,
+        settings: Settings,
+        plot_queue: Queue,
+        shutdown_event: Event,
+        log_queue: Queue,
+    ):
         super().__init__(name="PlottersProcess")
         self.settings = settings.jobs_settings.dayplot
         self.plot_queue = plot_queue
@@ -35,10 +41,8 @@ class Plotters(Process):
         # Internal import to avoid memory bloat in other processes
 
         configure_worker_logging(self.log_queue)
-        
-        self.logger = logging.getLogger(__name__)
 
-        self.logger.info("Starting Managers Process (Notifier + RingServer)")
+        self.logger = logging.getLogger(__name__)
 
         self.logger.info("Starting Plotters Process (DayPlotWorker). PID: %d", getpid())
 
@@ -88,6 +92,7 @@ class Plotters(Process):
         """
         Actual plotting logic using Obspy.
         """
+        import matplotlib.pyplot as plt
         from obspy import read
 
         try:
@@ -111,6 +116,8 @@ class Plotters(Process):
                 dpi=200,
                 outfile=str(plot_filename),
             )
+            plt.close("all")
+
             self.logger.info(f"Dayplot updated: {plot_filename.name}")
         except Exception as e:
             self.logger.error(f"Failed to generate plot for {data_path}: {e}")

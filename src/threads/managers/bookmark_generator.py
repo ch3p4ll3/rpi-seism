@@ -60,9 +60,9 @@ class BookmarkGenerator(Thread):
 
                 time.sleep(0.5)  # Sleep briefly to reduce CPU usage
             except Exception:
-                logger.exception("Error in Trigger Processor loop")
+                logger.exception("Error in Bookmark Generator Processor loop")
 
-        logger.info("Trigger Processor stopped.")
+        logger.info("Bookmark Generator Processor stopped.")
 
     def _request_events(self):
         now = datetime.now(UTC)
