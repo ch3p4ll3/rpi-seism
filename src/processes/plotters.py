@@ -6,15 +6,16 @@ from pathlib import Path
 
 from rpi_seism_common.settings import Settings
 
-logger = logging.getLogger(__name__)
+from src.logger import configure_worker_logging
 
 
 class Plotters(Process):
-    def __init__(self, settings: Settings, plot_queue: Queue, shutdown_event: Event):
+    def __init__(self, settings: Settings, plot_queue: Queue, shutdown_event: Event, log_queue: Queue):
         super().__init__(name="PlottersProcess")
         self.settings = settings.jobs_settings.dayplot
         self.plot_queue = plot_queue
         self.shutdown_event = shutdown_event
+        self.log_queue = log_queue
 
         self.last_shutdown_event = 0
 
@@ -33,7 +34,13 @@ class Plotters(Process):
         from queue import Empty
         # Internal import to avoid memory bloat in other processes
 
-        logger.info("Starting Plotters Process (DayPlotWorker). PID: %d", getpid())
+        configure_worker_logging(self.log_queue)
+        
+        self.logger = logging.getLogger(__name__)
+
+        self.logger.info("Starting Managers Process (Notifier + RingServer)")
+
+        self.logger.info("Starting Plotters Process (DayPlotWorker). PID: %d", getpid())
 
         shutdown_triggered_time = None
 
@@ -43,7 +50,7 @@ class Plotters(Process):
                 if self.shutdown_event.is_set():
                     if shutdown_triggered_time is None:
                         shutdown_triggered_time = time.time()
-                        logger.info(
+                        self.logger.info(
                             "Shutdown signaled. Draining queue for up to 10 seconds."
                         )
 
@@ -52,18 +59,18 @@ class Plotters(Process):
                         time.time() - shutdown_triggered_time
                         > self.settings.shutdown_timeout
                     ):
-                        logger.info("Grace period expired. Force closing plotter.")
+                        self.logger.info("Grace period expired. Force closing plotter.")
                         break
                 # We use a timeout so we can check the shutdown_event periodically
                 task = self.plot_queue.get(timeout=1.0)
 
                 if task is None:
-                    logger.debug("Received None, stopping process")
+                    self.logger.debug("Received None, stopping process")
                     break
 
                 # ADD THIS CHECK:
                 if not isinstance(task, dict):
-                    logger.warning(
+                    self.logger.warning(
                         f"Plotter received invalid task type: {type(task)} value: {task}"
                     )
                     continue
@@ -73,9 +80,9 @@ class Plotters(Process):
             except Empty:
                 continue
             except Exception:
-                logger.exception("Error in Plotters worker loop")
+                self.logger.exception("Error in Plotters worker loop")
 
-        logger.info("Plotters process stopped.")
+        self.logger.info("Plotters process stopped.")
 
     def _generate_dayplot(self, data_path, plot_path):
         """
@@ -104,6 +111,6 @@ class Plotters(Process):
                 dpi=200,
                 outfile=str(plot_filename),
             )
-            logger.info(f"Dayplot updated: {plot_filename.name}")
+            self.logger.info(f"Dayplot updated: {plot_filename.name}")
         except Exception as e:
-            logger.error(f"Failed to generate plot for {data_path}: {e}")
+            self.logger.error(f"Failed to generate plot for {data_path}: {e}")

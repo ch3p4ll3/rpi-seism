@@ -7,7 +7,7 @@ from pathlib import Path
 from rpi_seism_common.settings import Settings
 
 # Internal imports for the new Process Containers
-from src.logger import configure_logger
+from src.logger import setup_main_logging
 from src.processes.managers import Managers
 from src.processes.plotters import Plotters
 from src.processes.producers import Producers
@@ -21,13 +21,15 @@ def main():
     # 1. Setup paths and settings
     data_base_folder = Path(__file__).parent.parent / "data"
     settings = Settings.load_settings(data_base_folder / "config.yml")
-    configure_logger(data_base_folder)
     ensure_station_xml(settings, data_base_folder / "station.xml")
 
     # Use standard primitives (Faster, direct IPC)
     shutdown_event = multiprocessing.Event()
     earthquake_event = multiprocessing.Event()
     plot_queue = multiprocessing.Queue()
+
+    log_queue = multiprocessing.Queue(-1)
+    log_listener = setup_main_logging(data_base_folder, log_queue)
 
     # Define the ZMQ Address for IPC
     ZMQ_ADDR = "ipc:///tmp/seism_hub.ipc"
@@ -44,7 +46,7 @@ def main():
     # Initialize the 4 Process Containers
     # Each of these encapsulates multiple threads/tasks
 
-    reader = Reader(settings, shutdown_event, ZMQ_ADDR)
+    reader = Reader(settings, shutdown_event, ZMQ_ADDR, log_queue)
 
     producers = Producers(
         settings,
@@ -53,16 +55,16 @@ def main():
         earthquake_event,
         plot_queue,
         ZMQ_ADDR,
+        log_queue,
     )
 
-    managers = Managers(settings, shutdown_event, earthquake_event, ZMQ_ADDR)
+    managers = Managers(settings, shutdown_event, earthquake_event, ZMQ_ADDR, log_queue)
 
     all_processes = [reader, producers, managers]
 
     if settings.jobs_settings.dayplot.enabled:
-        plotters = Plotters(settings, plot_queue, shutdown_event)
+        plotters = Plotters(settings, plot_queue, shutdown_event, log_queue)
         all_processes.append(plotters)
-
 
     # 5. Start Execution
     logger.info("Launching Seismic Stack (4-Process Architecture)...")
@@ -90,6 +92,8 @@ def main():
             if p.is_alive():
                 logger.warning(f"Process {p.name} refused to exit. Terminating...")
                 p.terminate()
+
+        log_listener.stop()  # Stop this last
 
     logger.info("Main script finished.")
 
