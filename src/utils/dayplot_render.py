@@ -1,15 +1,23 @@
-import gc
-from pathlib import Path
-
-
-def render_dayplot_worker(task, settings_dict):
+def render_dayplot_worker(task, settings_dict, log_queue):
     """
     DISPOSABLE WORKER: This function runs in a fresh process.
-    The process is destroyed immediately after this returns.
+    We pass log_queue to allow the worker to log messages safely.
     """
+    # Setup Logging for this specific worker process
+    import logging
+
+    from src.logger import configure_worker_logging
+
+    configure_worker_logging(log_queue)
+    logger = logging.getLogger(__name__)
+
+    # Local Imports to keep process startup light
     import matplotlib
 
-    matplotlib.use("Agg")  # Non-interactive backend
+    matplotlib.use("Agg")
+    import gc
+    from pathlib import Path
+
     import matplotlib.pyplot as plt
     from obspy import read
 
@@ -17,10 +25,10 @@ def render_dayplot_worker(task, settings_dict):
         data_path = task["mseed_path"]
         plot_path = task["plot_path"]
 
-        # Load Data
-        st = read(str(data_path))
+        logger.debug(f"Starting render for {Path(data_path).name}")
 
-        # Pre-processing
+        # Processing Logic
+        st = read(str(data_path))
         st.detrend("linear")
         st.taper(max_percentage=0.05)
         st.filter(
@@ -43,11 +51,15 @@ def render_dayplot_worker(task, settings_dict):
             show=False,
         )
 
+        # Cleanup
         plt.close("all")
         del st, tr
         gc.collect()
 
-        return f"Dayplot updated: {plot_filename.name}"
+        # Log success from inside the worker
+        logger.info(f"Dayplot updated: {plot_filename.name}")
+        return True
 
     except Exception as e:
-        return f"Plotting Error for {task.get('mseed_path')}: {e}"
+        logger.error(f"Failed to generate plot for {task.get('mseed_path')}: {e}")
+        return False

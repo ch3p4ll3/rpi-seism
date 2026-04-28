@@ -64,7 +64,7 @@ class Plotters(Process):
                     if isinstance(task, dict):
                         pool.apply_async(
                             render_dayplot_worker,
-                            args=(task, self.settings_dict),
+                            args=(task, self.settings_dict, self.log_queue),
                             callback=self.logger.info,  # Logs the success string from worker
                         )
 
