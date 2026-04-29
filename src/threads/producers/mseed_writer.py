@@ -178,6 +178,9 @@ class MSeedWriter(Thread):
 
                 self._write_trace(data_path, plot_path, stream)
 
+                # clean unused data
+                del stream, trace
+
         self._buffer.clear()
         self._start_time = None
 
