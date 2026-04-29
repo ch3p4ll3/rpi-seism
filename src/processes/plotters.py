@@ -4,7 +4,7 @@ from multiprocessing import Event, Pool, Process, Queue
 from os import getpid
 from queue import Empty
 
-from src.utils.dayplot_render import render_dayplot_worker
+from src.utils.dayplot_render import init_worker, render_dayplot_worker
 
 
 class Plotters(Process):
@@ -39,7 +39,12 @@ class Plotters(Process):
 
         # processes=1: Do one plot at a time to save RAM
         # maxtasksperchild=1: KILL the process after 1 task to prevent OOM
-        with Pool(processes=1, maxtasksperchild=1) as pool:
+        with Pool(
+            processes=1,
+            maxtasksperchild=1,
+            initializer=init_worker,
+            initargs=(self.log_queue,),
+        ) as pool:
             drain_start_time = None
             writer_finished = False
 
@@ -64,7 +69,7 @@ class Plotters(Process):
                     if isinstance(task, dict):
                         pool.apply_async(
                             render_dayplot_worker,
-                            args=(task, self.settings_dict, self.log_queue),
+                            args=(task, self.settings_dict),
                             callback=self.logger.info,  # Logs the success string from worker
                         )
 

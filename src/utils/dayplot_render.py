@@ -1,4 +1,12 @@
-def render_dayplot_worker(task, settings_dict, log_queue):
+# This global variable will hold the queue for each worker process
+_worker_log_queue = None
+
+def init_worker(q):
+    global _worker_log_queue
+    _worker_log_queue = q
+
+
+def render_dayplot_worker(task, settings_dict):
     """
     DISPOSABLE WORKER: This function runs in a fresh process.
     We pass log_queue to allow the worker to log messages safely.
@@ -8,7 +16,10 @@ def render_dayplot_worker(task, settings_dict, log_queue):
 
     from src.logger import configure_worker_logging
 
-    configure_worker_logging(log_queue)
+    global _worker_log_queue
+    if _worker_log_queue:
+        configure_worker_logging(_worker_log_queue)
+
     logger = logging.getLogger(__name__)
 
     # Local Imports to keep process startup light
