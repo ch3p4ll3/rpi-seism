@@ -1,9 +1,8 @@
 import logging
-from multiprocessing import Event, Process
+from multiprocessing import Event, Process, Queue
 
 from rpi_seism_common.settings import Settings
-
-logger = logging.getLogger(__name__)
+from src.logger import configure_worker_logging
 
 
 class Managers(Process):
@@ -13,12 +12,14 @@ class Managers(Process):
         shutdown_event: Event,
         trigger_event: Event,
         zmq_addr: str,
+        log_queue: Queue
     ):
         super().__init__(name="ManagersProcess")
         self.settings = settings
         self.shutdown_event = shutdown_event
         self.trigger_event = trigger_event
         self.zmq_addr = zmq_addr
+        self.log_queue = log_queue
 
     def run(self):
         from src.threads.managers import (
@@ -27,7 +28,11 @@ class Managers(Process):
             RingServerSender,
         )
 
-        logger.info("Starting Managers Process (Notifier + RingServer)")
+        configure_worker_logging(self.log_queue)
+        
+        self.logger = logging.getLogger(__name__)
+
+        self.logger.info("Starting Managers Process (Notifier + RingServer)")
 
         # Initialize jobs
         jobs = []
@@ -60,16 +65,16 @@ class Managers(Process):
                 for job in jobs:
                     job.join(timeout=0.1)
                     if not job.is_alive() and not self.shutdown_event.is_set():
-                        logger.error(f"Manager thread {job.name} died unexpectedly")
+                        self.logger.error(f"Manager thread {job.name} died unexpectedly")
                         self.shutdown_event.set()  # Kill everything if a core thread dies
                         break
 
         except Exception:
-            logger.exception("Error in Managers process container")
+            self.logger.exception("Error in Managers process container")
             self.shutdown_event.set()
         finally:
-            logger.info("Cleaning up Manager threads...")
+            self.logger.info("Cleaning up Manager threads...")
             for job in jobs:
                 if job.is_alive():
                     job.join(timeout=2.0)
-            logger.info("Managers process stopped.")
+            self.logger.info("Managers process stopped.")

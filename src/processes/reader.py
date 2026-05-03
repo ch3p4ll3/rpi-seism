@@ -1,6 +1,6 @@
 import time
-from logging import getLogger
-from multiprocessing import Event, Process
+import logging
+from multiprocessing import Event, Process, Queue
 from os import getpid
 
 import serial
@@ -8,11 +8,10 @@ import zmq
 from rpi_seism_common.settings import Settings
 
 from src.exception.mcu_no_response import MCUNoResponse
+from src.logger import configure_worker_logging
 from src.structs.mcu_settings import MCUSettingsFrame
 from src.structs.sample import Sample
 from src.utils.soh_tracker import SOHTracker
-
-logger = getLogger(__name__)
 
 
 class Reader(Process):
@@ -24,14 +23,16 @@ class Reader(Process):
     def __init__(
         self,
         settings: Settings,
-        shutdown_event: Event = None,
-        zmq_endpoint: str = "ipc:///tmp/seismic_data.ipc",
+        shutdown_event: Event,
+        zmq_endpoint: str,
+        log_queue: Queue
     ):
         super().__init__(name="ReaderProcess")
         self.port = settings.jobs_settings.reader.port
         self.settings = settings
         self.zmq_endpoint = zmq_endpoint
         self.shutdown_event = shutdown_event
+        self.log_queue = log_queue
         self.soh_tracker = SOHTracker()
 
         self.queue_len = (
@@ -46,7 +47,11 @@ class Reader(Process):
         self.channels = self.__map_channels()
 
     def run(self):
-        logger.info("Reader started. PID: %d", getpid())
+        configure_worker_logging(self.log_queue)
+        
+        self.logger = logging.getLogger(__name__)
+
+        self.logger.info("Reader started. PID: %d", getpid())
         # Initialize ZeroMQ
         context = zmq.Context()
         self.pub_socket = context.socket(zmq.PUB)
@@ -55,7 +60,7 @@ class Reader(Process):
 
         try:
             with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
-                logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
+                self.logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
 
                 if not self._sendSettings(ser, is_initial_connect=True):
                     raise MCUNoResponse("MCU did not respond to settings update.")
@@ -69,7 +74,7 @@ class Reader(Process):
                     if elapsed > self.connection_timeout:
                         # If we haven't seen a packet, the Arduino might be in STOP mode
                         # because its buffer got full. We "poke" it by sending settings again.
-                        logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
+                        self.logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
                         self._sendSettings(ser)
                         self.last_packet_time = time.time()
 
@@ -92,7 +97,7 @@ class Reader(Process):
                                     : Sample.PACKET_SIZE
                                 ]  # Remove processed packet
                             else:
-                                logger.warning("Checksum failed, shifting buffer")
+                                self.logger.warning("Checksum failed, shifting buffer")
                                 self.soh_tracker.record_checksum_error()
                                 self.soh_tracker.record_dropped_bytes(1)
                                 del buffer[0]  # Slide window to find next header
@@ -108,10 +113,10 @@ class Reader(Process):
                         self.last_soh_update = time.time()
 
         except Exception:
-            logger.exception("RS-422 Reader exception")
+            self.logger.exception("RS-422 Reader exception")
         finally:
             self.soh_tracker.set_disconnected()
-            logger.info("RS-422 Reader stopped.")
+            self.logger.info("RS-422 Reader stopped.")
             self.shutdown_event.set()
             self.pub_socket.close()
             context.term()
@@ -133,14 +138,14 @@ class Reader(Process):
             self.settings
         ).to_bytes()  # This should be your 6-byte packet
 
-        logger.info("Sending settings to MCU: %s", sent_bytes.hex(" "))
+        self.logger.info("Sending settings to MCU: %s", sent_bytes.hex(" "))
 
         # Transmit
         ser.write(sent_bytes)
         ser.flush()  # Block until UART buffer is physically empty
 
         # Wait for Echo/Response
-        logger.info("Waiting for MCU confirmation...")
+        self.logger.info("Waiting for MCU confirmation...")
 
         ser.reset_input_buffer()
 
@@ -163,14 +168,14 @@ class Reader(Process):
 
         # Verify
         if not response:
-            logger.error("MCU failed to respond (Timeout)")
+            self.logger.error("MCU failed to respond (Timeout)")
             return False
 
         if response == sent_bytes:
-            logger.info("MCU settings verified successfully!")
+            self.logger.info("MCU settings verified successfully!")
             return True
         else:
-            logger.error("MCU verification failed!")
-            logger.error("Sent:     %s", sent_bytes.hex())
-            logger.error("Received: %s", response.hex())
+            self.logger.error("MCU verification failed!")
+            self.logger.error("Sent:     %s", sent_bytes.hex())
+            self.logger.error("Received: %s", response.hex())
             return False

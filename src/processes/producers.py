@@ -4,7 +4,7 @@ from pathlib import Path
 
 from rpi_seism_common.settings import Settings
 
-logger = logging.getLogger(__name__)
+from src.logger import configure_worker_logging
 
 
 class Producers(Process):
@@ -16,6 +16,7 @@ class Producers(Process):
         trigger_event: Event,
         plot_queue: Queue,
         zmq_addr: str,
+        log_queue: Queue
     ):
         # CRITICAL: Call super constructor
         super().__init__(name="ProducersProcess")
@@ -25,11 +26,16 @@ class Producers(Process):
         self.trigger_event = trigger_event
         self.plot_queue = plot_queue
         self.zmq_addr = zmq_addr
+        self.log_queue = log_queue
 
     def run(self):
         from src.threads.producers import MSeedWriter, TriggerProcessor, WebSocketSender
 
-        logger.info("Starting Producers Process (Reader + Trigger + Writer)")
+        configure_worker_logging(self.log_queue)
+        
+        self.logger = logging.getLogger(__name__)
+
+        self.logger.info("Starting Producers Process (Reader + Trigger + Writer)")
 
         jobs = []
 
@@ -62,18 +68,18 @@ class Producers(Process):
                 for job in jobs:
                     job.join(timeout=0.1)
                     if not job.is_alive() and not self.shutdown_event.is_set():
-                        logger.error(f"Manager thread {job.name} died unexpectedly")
+                        self.logger.error(f"Manager thread {job.name} died unexpectedly")
                         self.shutdown_event.set()  # Kill everything if a core thread dies
                         break
 
         except Exception:
-            logger.exception("Error in Producers process container")
+            self.logger.exception("Error in Producers process container")
             self.shutdown_event.set()
         finally:
-            logger.info("Cleaning up Producer threads...")
+            self.logger.info("Cleaning up Producer threads...")
             for job in jobs:
                 if job.is_alive() and isinstance(job, MSeedWriter):
                     job.join(timeout=30.0)
                 else:
                     job.join(timeout=5.0)
-            logger.info("Producers process stopped.")
+            self.logger.info("Producers process stopped.")
