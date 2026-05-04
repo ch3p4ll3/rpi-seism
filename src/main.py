@@ -11,7 +11,7 @@ from src.logger import setup_main_logging
 from src.processes.managers import Managers
 from src.processes.plotters import Plotters
 from src.processes.producers import Producers
-from src.processes.reader import Reader
+from src.processes.onavi_reader import OnaviReader
 from src.station_xml import ensure_station_xml
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ def main():
     # Initialize the 4 Process Containers
     # Each of these encapsulates multiple threads/tasks
 
-    reader = Reader(settings, shutdown_event, ZMQ_ADDR, log_queue)
+    reader = OnaviReader(settings, shutdown_event, ZMQ_ADDR, log_queue)
 
     producers = Producers(
         settings,
