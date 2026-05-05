@@ -75,6 +75,8 @@ class Reader(Process):
                         # If we haven't seen a packet, the Arduino might be in STOP mode
                         # because its buffer got full. We "poke" it by sending settings again.
                         self.logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
+                        ser.reset_input_buffer()  # Clear incoming junk
+                        ser.reset_output_buffer() # Clear pending writes
                         self._sendSettings(ser)
                         self.last_packet_time = time.time()
 
