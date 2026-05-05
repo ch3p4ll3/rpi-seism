@@ -114,19 +114,35 @@ class OnaviReader(Process):
 
     def read(self, ser) -> Sample:
         incoming = self._read_raw(ser)
+    
+        # 1. Validate packet length and headers (0x23 is '#')
+        if len(incoming) < 9 or incoming[0] != 0x23 or incoming[1] != 0x23:
+            # If headers are wrong, the buffer is out of sync.
+            ser.reset_input_buffer() 
+            return None 
 
-        FLOAT_ONAVI_FACTOR = 7.629394531250e-05
+        # 16-bit Reconstruction (Big Endian)
+        # Using (MSB << 8) | LSB is the standard, cleanest way.
+        x_raw = (incoming[2] << 8) | incoming[3]
+        y_raw = (incoming[4] << 8) | incoming[5]
+        z_raw = (incoming[6] << 8) | incoming[7]
+
+        # Correct Scaling Constants
+        # (5 / 65536) = 7.62939453125e-05
+        SCALE = 7.629394531250e-05
         EARTH_G = 9.78033
 
-        x_axes = (incoming[2] * 255) + incoming[3]
-        y_axes = (incoming[4] * 255) + incoming[5]
-        z_axes = (incoming[6] * 255) + incoming[7]
+        # Calculate g values and convert to m/s^2
+        # Formula: (Raw - Offset) * Scale * Gravity
+        x = (x_raw - 32768.0) * SCALE * EARTH_G
+        y = (y_raw - 32768.0) * SCALE * EARTH_G
+        z = (z_raw - 32768.0) * SCALE * EARTH_G
 
-        x = (x_axes - 32768.0) * FLOAT_ONAVI_FACTOR * EARTH_G
-        y = (y_axes - 32768.0) * FLOAT_ONAVI_FACTOR * EARTH_G
-        z = (z_axes - 32768.0) * FLOAT_ONAVI_FACTOR * EARTH_G
+        # Note: Documentation says Z offset is different (+1g at 45874)
+        # If you want Z to be 0 when sitting flat, use 45874 instead of 32768:
+        # z = (z_raw - 45874.0) * SCALE * EARTH_G
 
-        return Sample(header_1=0xAA, header_2=0xBB, ch0=z, ch1=x, ch2=y, crc=0)
+        return Sample(header_1=0xAA, header_2=0xBB, ch0=z_raw, ch1=x_raw, ch2=y_raw, crc=0)
 
     def _process_packet(self, data: Sample):
         timestamp = time.time()
