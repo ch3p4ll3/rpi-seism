@@ -53,7 +53,7 @@ class RingServerSender(Thread):
 
             # Consume Queue
             try:
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") != "packet":
                     continue
@@ -62,7 +62,7 @@ class RingServerSender(Thread):
                     self._start_time = packet["timestamp"]
 
                 for item in packet["measurements"]:
-                    ch_name = item["channel"].name
+                    ch_name = item["channel"]["name"]
                     self._buffer.setdefault(ch_name, []).append(item["value"])
             except zmq.Again:
                 # No more data in the ZMQ socket for now

@@ -70,7 +70,7 @@ class TriggerProcessor(Thread):
         while not self.shutdown_event.is_set():
             try:
                 # Expecting: {"timestamp": float, "measurements": [{"channel": obj, "value": int}, ...]}
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") != "packet":
                     continue
@@ -80,7 +80,7 @@ class TriggerProcessor(Thread):
                     (
                         item["value"]
                         for item in packet["measurements"]
-                        if item["channel"].name == self.trigger_channel
+                        if item["channel"]["name"] == self.trigger_channel
                     ),
                     None,
                 )

@@ -91,7 +91,7 @@ class WebSocketSender(Thread):
             try:
                 # Expecting: {"timestamp": float, "measurements": [{"channel": obj, "value": int}, ...]}
                 packet = await asyncio.wait_for(
-                    self.sub_socket.recv_pyobj(), timeout=1.0
+                    self.sub_socket.recv_json(), timeout=1.0
                 )
 
                 # Filter for packets
@@ -105,7 +105,7 @@ class WebSocketSender(Thread):
 
                 # update each channel's buffer
                 for item in packet["measurements"]:
-                    ch_name = item["channel"].name
+                    ch_name = item["channel"]["name"]
                     val = item["value"]
 
                     if ch_name not in self.channels_state:

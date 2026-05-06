@@ -77,7 +77,7 @@ class MSeedWriter(Thread):
 
             try:
                 # Receive one packet at a time
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") == "packet":
                     ts = packet["timestamp"]
@@ -85,7 +85,7 @@ class MSeedWriter(Thread):
                         self._start_time = ts
 
                     for item in packet["measurements"]:
-                        ch_name = item["channel"].name
+                        ch_name = item["channel"]["name"]
                         self._buffer.setdefault(ch_name, []).append(item["value"])
 
             except zmq.Again:
