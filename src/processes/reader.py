@@ -47,81 +47,85 @@ class Reader(Process):
         self.channels = self.__map_channels()
 
     def run(self):
-        configure_worker_logging(self.log_queue)
-        
-        self.logger = logging.getLogger(__name__)
-
-        self.logger.info("Reader started. PID: %d", getpid())
-        # Initialize ZeroMQ
-        context = zmq.Context()
-        self.pub_socket = context.socket(zmq.PUB)
-        self.pub_socket.set(zmq.SNDHWM, self.queue_len)
-        self.pub_socket.bind(self.zmq_endpoint)
-
         try:
-            with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
-                self.logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
+            configure_worker_logging(self.log_queue)
+            
+            self.logger = logging.getLogger(__name__)
 
-                if not self._sendSettings(ser, is_initial_connect=True):
-                    raise MCUNoResponse("MCU did not respond to settings update.")
+            self.logger.info("Reader started. PID: %d", getpid())
+            # Initialize ZeroMQ
+            context = zmq.Context()
+            self.pub_socket = context.socket(zmq.PUB)
+            self.pub_socket.set(zmq.SNDHWM, self.queue_len)
+            self.pub_socket.bind(self.zmq_endpoint)
 
-                # Buffer to store incoming bytes
-                buffer = bytearray()
-                self.last_packet_time = time.time()
+            try:
+                with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
+                    self.logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
 
-                while not self.shutdown_event.is_set():
-                    elapsed = time.time() - self.last_packet_time
-                    if elapsed > self.connection_timeout:
-                        # If we haven't seen a packet, the Arduino might be in STOP mode
-                        # because its buffer got full. We "poke" it by sending settings again.
-                        self.logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
-                        ser.reset_input_buffer()  # Clear incoming junk
-                        ser.reset_output_buffer() # Clear pending writes
-                        self._sendSettings(ser)
-                        self.last_packet_time = time.time()
+                    if not self._sendSettings(ser, is_initial_connect=True):
+                        raise MCUNoResponse("MCU did not respond to settings update.")
 
-                    # read available data
-                    if ser.in_waiting > 0:
-                        buffer.extend(ser.read(ser.in_waiting))
+                    # Buffer to store incoming bytes
+                    buffer = bytearray()
+                    self.last_packet_time = time.time()
 
-                    # process buffer for packets
-                    while len(buffer) >= Sample.PACKET_SIZE:
-                        # Look for headers 0xAA 0xBB
-                        if buffer[0] == 0xAA and buffer[1] == 0xBB:
-                            packet_data = buffer[: Sample.PACKET_SIZE]
+                    while not self.shutdown_event.is_set():
+                        elapsed = time.time() - self.last_packet_time
+                        if elapsed > self.connection_timeout:
+                            # If we haven't seen a packet, the Arduino might be in STOP mode
+                            # because its buffer got full. We "poke" it by sending settings again.
+                            self.logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
+                            ser.reset_input_buffer()  # Clear incoming junk
+                            ser.reset_output_buffer() # Clear pending writes
+                            self._sendSettings(ser)
+                            self.last_packet_time = time.time()
 
-                            sample, checksum = Sample.from_bytes(packet_data)
-                            if checksum:
-                                self.last_packet_time = time.time()
-                                self._process_packet(sample)
-                                self.soh_tracker.record_success()
-                                del buffer[
-                                    : Sample.PACKET_SIZE
-                                ]  # Remove processed packet
+                        # read available data
+                        if ser.in_waiting > 0:
+                            buffer.extend(ser.read(ser.in_waiting))
+
+                        # process buffer for packets
+                        while len(buffer) >= Sample.PACKET_SIZE:
+                            # Look for headers 0xAA 0xBB
+                            if buffer[0] == 0xAA and buffer[1] == 0xBB:
+                                packet_data = buffer[: Sample.PACKET_SIZE]
+
+                                sample, checksum = Sample.from_bytes(packet_data)
+                                if checksum:
+                                    self.last_packet_time = time.time()
+                                    self._process_packet(sample)
+                                    self.soh_tracker.record_success()
+                                    del buffer[
+                                        : Sample.PACKET_SIZE
+                                    ]  # Remove processed packet
+                                else:
+                                    self.logger.warning("Checksum failed, shifting buffer")
+                                    self.soh_tracker.record_checksum_error()
+                                    self.soh_tracker.record_dropped_bytes(1)
+                                    del buffer[0]  # Slide window to find next header
                             else:
-                                self.logger.warning("Checksum failed, shifting buffer")
-                                self.soh_tracker.record_checksum_error()
+                                # Not a header, discard byte and keep looking
                                 self.soh_tracker.record_dropped_bytes(1)
-                                del buffer[0]  # Slide window to find next header
-                        else:
-                            # Not a header, discard byte and keep looking
-                            self.soh_tracker.record_dropped_bytes(1)
-                            del buffer[0]
+                                del buffer[0]
 
-                    if time.time() - self.last_soh_update > 5.0:
-                        soh_stats = self.soh_tracker.get_snapshot()
-                        # Send on a specific ZMQ topic or a different socket
-                        self.pub_socket.send_json({"type": "SOH", "data": soh_stats})
-                        self.last_soh_update = time.time()
+                        if time.time() - self.last_soh_update > 5.0:
+                            soh_stats = self.soh_tracker.get_snapshot()
+                            # Send on a specific ZMQ topic or a different socket
+                            self.pub_socket.send_json({"type": "SOH", "data": soh_stats})
+                            self.last_soh_update = time.time()
 
-        except Exception:
-            self.logger.exception("RS-422 Reader exception")
-        finally:
-            self.soh_tracker.set_disconnected()
-            self.logger.info("RS-422 Reader stopped.")
-            self.shutdown_event.set()
-            self.pub_socket.close()
-            context.term()
+            except Exception:
+                self.logger.exception("RS-422 Reader exception")
+            finally:
+                self.soh_tracker.set_disconnected()
+                self.logger.info("RS-422 Reader stopped.")
+                self.shutdown_event.set()
+                self.pub_socket.close()
+                context.term()
+        except Exception as e:
+            print("Error in Reader process: ", e)
+            self.logger.exception("Error in Reader process: ", exc_info=True)
 
     def _process_packet(self, data: Sample):
         timestamp = time.time()

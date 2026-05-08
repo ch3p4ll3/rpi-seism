@@ -29,57 +29,61 @@ class Producers(Process):
         self.log_queue = log_queue
 
     def run(self):
-        from src.threads.producers import MSeedWriter, TriggerProcessor, WebSocketSender
-
-        configure_worker_logging(self.log_queue)
-        
-        self.logger = logging.getLogger(__name__)
-
-        self.logger.info("Starting Producers Process (Reader + Trigger + Writer)")
-
-        jobs = []
-
-        writer_job = MSeedWriter(
-            self.settings,
-            self.data_base_folder,
-            self.shutdown_event,
-            self.trigger_event,
-            self.plot_queue,
-            self.zmq_addr,
-        )
-        jobs.append(writer_job)
-
-        trigger_job = TriggerProcessor(
-            self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
-        )
-        jobs.append(trigger_job)
-
-        websocket_job = WebSocketSender(
-            self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
-        )
-        jobs.append(websocket_job)
-
-        for job in jobs:
-            job.start()
-
         try:
-            # Monitor threads while checking for the global shutdown signal
-            while not self.shutdown_event.is_set():
-                for job in jobs:
-                    job.join(timeout=0.1)
-                    if not job.is_alive() and not self.shutdown_event.is_set():
-                        self.logger.error(f"Manager thread {job.name} died unexpectedly")
-                        self.shutdown_event.set()  # Kill everything if a core thread dies
-                        break
+            from src.threads.producers import MSeedWriter, TriggerProcessor, WebSocketSender
 
-        except Exception:
-            self.logger.exception("Error in Producers process container")
-            self.shutdown_event.set()
-        finally:
-            self.logger.info("Cleaning up Producer threads...")
+            configure_worker_logging(self.log_queue)
+            
+            self.logger = logging.getLogger(__name__)
+
+            self.logger.info("Starting Producers Process (Reader + Trigger + Writer)")
+
+            jobs = []
+
+            writer_job = MSeedWriter(
+                self.settings,
+                self.data_base_folder,
+                self.shutdown_event,
+                self.trigger_event,
+                self.plot_queue,
+                self.zmq_addr,
+            )
+            jobs.append(writer_job)
+
+            trigger_job = TriggerProcessor(
+                self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
+            )
+            jobs.append(trigger_job)
+
+            websocket_job = WebSocketSender(
+                self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
+            )
+            jobs.append(websocket_job)
+
             for job in jobs:
-                if job.is_alive() and isinstance(job, MSeedWriter):
-                    job.join(timeout=30.0)
-                else:
-                    job.join(timeout=5.0)
-            self.logger.info("Producers process stopped.")
+                job.start()
+
+            try:
+                # Monitor threads while checking for the global shutdown signal
+                while not self.shutdown_event.is_set():
+                    for job in jobs:
+                        job.join(timeout=0.1)
+                        if not job.is_alive() and not self.shutdown_event.is_set():
+                            self.logger.error(f"Manager thread {job.name} died unexpectedly")
+                            self.shutdown_event.set()  # Kill everything if a core thread dies
+                            break
+
+            except Exception:
+                self.logger.exception("Error in Producers process container")
+                self.shutdown_event.set()
+            finally:
+                self.logger.info("Cleaning up Producer threads...")
+                for job in jobs:
+                    if job.is_alive() and isinstance(job, MSeedWriter):
+                        job.join(timeout=30.0)
+                    else:
+                        job.join(timeout=5.0)
+                self.logger.info("Producers process stopped.")
+        except Exception as e:
+            print("Error in Producers process: ", e)
+            self.logger.exception("Error in Producers process: ", exc_info=True)
