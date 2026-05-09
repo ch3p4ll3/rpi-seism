@@ -63,7 +63,7 @@ class Reader(Process):
                 with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
                     self.logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
 
-                    if not self._sendSettings(ser, is_initial_connect=True):
+                    if not self._send_settings(ser, is_initial_connect=True):
                         raise MCUNoResponse("MCU did not respond to settings update.")
 
                     # Buffer to store incoming bytes
@@ -75,10 +75,11 @@ class Reader(Process):
                         if elapsed > self.connection_timeout:
                             # If we haven't seen a packet, the Arduino might be in STOP mode
                             # because its buffer got full. We "poke" it by sending settings again.
-                            self.logger.warning(f"No data for {elapsed:.1f}s. Re-poking MCU...")
+                            self.logger.warning("No data for %fs. Re-poking MCU...", elapsed)
                             ser.reset_input_buffer()  # Clear incoming junk
                             ser.reset_output_buffer() # Clear pending writes
-                            self._sendSettings(ser)
+                            if not self._send_settings(ser):
+                                raise MCUNoResponse("MCU did not respond to re-poke attempt. Hard reset needed.")
                             self.last_packet_time = time.time()
 
                         # read available data
@@ -136,7 +137,7 @@ class Reader(Process):
     def __map_channels(self):
         return {i.adc_channel: i for i in self.settings.channels}
 
-    def _sendSettings(self, ser: serial.Serial, is_initial_connect: bool = False):
+    def _send_settings(self, ser: serial.Serial, is_initial_connect: bool = False):
         if is_initial_connect:
             time.sleep(2)  # Wait to arduino to reboot
 
@@ -145,6 +146,7 @@ class Reader(Process):
         ).to_bytes()  # This should be your 6-byte packet
 
         self.logger.info("Sending settings to MCU: %s", sent_bytes.hex(" "))
+        ser.reset_input_buffer()
 
         # Transmit
         ser.write(sent_bytes)
@@ -152,8 +154,6 @@ class Reader(Process):
 
         # Wait for Echo/Response
         self.logger.info("Waiting for MCU confirmation...")
-
-        ser.reset_input_buffer()
 
         # We look for the headers (0xCC 0xDD) in the response to ensure alignment
         response = b""

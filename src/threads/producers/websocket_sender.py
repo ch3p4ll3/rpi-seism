@@ -180,7 +180,7 @@ class WebSocketSender(Thread):
         )
 
         await self._broadcast(Sample(payload=message))
-        
+
         del tr, tr_decimated
 
     async def _broadcast_soh(self):

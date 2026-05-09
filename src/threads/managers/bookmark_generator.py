@@ -80,7 +80,7 @@ class BookmarkGenerator(Thread):
                 self.settings.station.longitude,
             )
 
-            logger.debug("Starting to search for events between %s and %s", start, end)
+            logger.debug("Starting to search for events between %s and %s", str(start), str(end))
             self._manage_events(url)
 
     def _manage_events(self, url: str):

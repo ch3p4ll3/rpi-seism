@@ -91,8 +91,8 @@ class MSeedWriter(Thread):
             except zmq.Again:
                 # This exception is raised when RCVTIMEO is hit
                 pass
-            except Exception as e:
-                logger.error(f"ZMQ Error: {e}")
+            except Exception:
+                logger.error("ZMQ Error", exc_info=True)
 
             # Now these checks will actually execute!
 

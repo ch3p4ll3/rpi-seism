@@ -69,7 +69,7 @@ class Producers(Process):
                     for job in jobs:
                         job.join(timeout=0.1)
                         if not job.is_alive() and not self.shutdown_event.is_set():
-                            self.logger.error(f"Manager thread {job.name} died unexpectedly")
+                            self.logger.error("Manager thread %s died unexpectedly", job.name)
                             self.shutdown_event.set()  # Kill everything if a core thread dies
                             break
 

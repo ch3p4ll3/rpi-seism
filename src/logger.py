@@ -1,6 +1,7 @@
 import logging
 from logging import config, handlers
 
+
 def setup_main_logging(base_path, queue):
     """Called only in main.py. Configures the 'real' destination of logs."""
     log_dir = base_path / "logs"
@@ -11,8 +12,12 @@ def setup_main_logging(base_path, queue):
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "default": {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
-            "detailed": {"format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"},
+            "default": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            },
+            "detailed": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+            },
         },
         "handlers": {
             "console": {
@@ -24,7 +29,7 @@ def setup_main_logging(base_path, queue):
                 "class": "logging.handlers.TimedRotatingFileHandler",
                 "level": "DEBUG",
                 "formatter": "detailed",
-                "filename": str(log_dir / 'daemon.log'),
+                "filename": str(log_dir / "daemon.log"),
                 "when": "midnight",
                 "interval": 1,
                 "backupCount": 7,
@@ -39,7 +44,7 @@ def setup_main_logging(base_path, queue):
 
     # Apply the config to the main process
     logging.config.dictConfig(logging_config)
-    
+
     # Get the handlers we just created and give them to the listener
     # This captures everything sent to the queue and routes it through 'console' and 'file'
     root_handlers = logging.getLogger().handlers
@@ -47,15 +52,25 @@ def setup_main_logging(base_path, queue):
     listener.start()
     return listener
 
+
+class SafeQueueHandler(handlers.QueueHandler):
+    def prepare(self, record):
+        # This converts the exception traceback into a string
+        # so Python doesn't try to pickle the "live" traceback/zlib object.
+        if record.exc_info:
+            self.format(record)
+            record.exc_info = None  # Clear the un-pickleable object
+        return record
+
+
 def configure_worker_logging(queue):
     """Called inside the run() method of each Process."""
-    # Workers only need one handler: the QueueHandler
-    qh = handlers.QueueHandler(queue)
+    # Use our SafeQueueHandler instead of the standard QueueHandler
+    qh = SafeQueueHandler(queue)
     root = logging.getLogger()
-    
-    # Remove any default handlers inherited during spawn/fork
+
     for h in root.handlers[:]:
         root.removeHandler(h)
-        
+
     root.addHandler(qh)
     root.setLevel(logging.DEBUG)
