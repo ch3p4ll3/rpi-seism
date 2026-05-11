@@ -98,8 +98,13 @@ class TriggerProcessor(Thread):
             except zmq.Again:
                 # This exception is raised when RCVTIMEO is hit
                 pass
-            except Exception:
-                logger.exception("Error in Trigger Processor loop")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                logger.error(
+                    "Error in Trigger Processor loop: %s", error_msg, exc_info=False
+                )
 
         sub_socket.close()
         context.term()
@@ -119,8 +124,7 @@ class TriggerProcessor(Thread):
         # Handle State Changes (Edge Detection) with Dual Thresholds (Hysteresis)
         if current_ratio > self.thr_on and not self.last_trigger:
             logger.warning(
-                "EARTHQUAKE DETECTED: STA/LTA ratio %f > %f",
-                current_ratio, self.thr_on
+                "EARTHQUAKE DETECTED: STA/LTA ratio %f > %f", current_ratio, self.thr_on
             )
             self.earthquake_event.set()
             self.last_trigger = True
@@ -128,7 +132,8 @@ class TriggerProcessor(Thread):
         elif current_ratio < self.thr_off and self.last_trigger:
             logger.info(
                 "Trigger cleared: Signal ratio %f returned below %f",
-                current_ratio, self.thr_off
+                current_ratio,
+                self.thr_off,
             )
             self.earthquake_event.clear()
             self.last_trigger = False

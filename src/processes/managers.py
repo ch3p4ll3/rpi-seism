@@ -2,6 +2,7 @@ import logging
 from multiprocessing import Event, Process, Queue
 
 from rpi_seism_common.settings import Settings
+
 from src.logger import configure_worker_logging
 
 
@@ -12,7 +13,7 @@ class Managers(Process):
         shutdown_event: Event,
         trigger_event: Event,
         zmq_addr: str,
-        log_queue: Queue
+        log_queue: Queue,
     ):
         super().__init__(name="ManagersProcess")
         self.settings = settings
@@ -30,7 +31,7 @@ class Managers(Process):
             )
 
             configure_worker_logging(self.log_queue)
-            
+
             self.logger = logging.getLogger(__name__)
 
             self.logger.info("Starting Managers Process (Notifier + RingServer)")
@@ -40,7 +41,10 @@ class Managers(Process):
 
             if any(x.enabled for x in self.settings.jobs_settings.notifiers):
                 notifier_job = NotifierSender(
-                    self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
+                    self.settings,
+                    self.shutdown_event,
+                    self.trigger_event,
+                    self.zmq_addr,
                 )
                 jobs.append(notifier_job)
 
@@ -66,12 +70,19 @@ class Managers(Process):
                     for job in jobs:
                         job.join(timeout=0.1)
                         if not job.is_alive() and not self.shutdown_event.is_set():
-                            self.logger.error("Manager thread %s died unexpectedly", job.name)
+                            self.logger.error(
+                                "Manager thread %s died unexpectedly", job.name
+                            )
                             self.shutdown_event.set()  # Kill everything if a core thread dies
                             break
 
-            except Exception:
-                self.logger.exception("Error in Managers process container")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                self.logger.error(
+                    "Error in Managers process container: %s", error_msg, exc_info=False
+                )
                 self.shutdown_event.set()
             finally:
                 self.logger.info("Cleaning up Manager threads...")
@@ -80,5 +91,7 @@ class Managers(Process):
                         job.join(timeout=2.0)
                 self.logger.info("Managers process stopped.")
         except Exception as e:
-            print("Error in managers process: ", e)
-            self.logger.exception("Error in managers process: ", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Error in managers process: %s", error_msg)

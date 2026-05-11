@@ -96,7 +96,10 @@ class RingServerSender(Thread):
             )
             logger.info("Connected to Ringserver: %s", server_id)
         except Exception as e:
-            logger.error("DataLink connection failed", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error("DataLink connection failed: %s", error_msg)
             self.client = None
 
     def _flush(self):
@@ -151,7 +154,10 @@ class RingServerSender(Thread):
             logger.info("Flushed %d channels to Ringserver", len(self._buffer))
 
         except (DataLinkError, OSError) as e:
-            logger.error("Flush failed", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Flush failed: %s", error_msg)
             self.client.close()
             self.client = None
         finally:

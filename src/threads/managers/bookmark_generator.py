@@ -59,8 +59,15 @@ class BookmarkGenerator(Thread):
                     self.last_update = time.time()
 
                 time.sleep(0.5)  # Sleep briefly to reduce CPU usage
-            except Exception:
-                logger.exception("Error in Bookmark Generator Processor loop")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                logger.error(
+                    "Error in Bookmark Generator Processor loop: %s",
+                    error_msg,
+                    exc_info=False,
+                )
 
         logger.info("Bookmark Generator Processor stopped.")
 
@@ -80,7 +87,9 @@ class BookmarkGenerator(Thread):
                 self.settings.station.longitude,
             )
 
-            logger.debug("Starting to search for events between %s and %s", str(start), str(end))
+            logger.debug(
+                "Starting to search for events between %s and %s", str(start), str(end)
+            )
             self._manage_events(url)
 
     def _manage_events(self, url: str):

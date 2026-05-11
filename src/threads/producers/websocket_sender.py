@@ -137,8 +137,13 @@ class WebSocketSender(Thread):
                 continue  # No message received within timeout, loop back and check shutdown_event
             except asyncio.TimeoutError:
                 continue
-            except Exception:
-                logger.exception("Error in WebSocket producer loop")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                logger.error(
+                    "Error in WebSocket producer loop: %s", error_msg, exc_info=False
+                )
 
         self.sub_socket.close()
         self.ctx.term()

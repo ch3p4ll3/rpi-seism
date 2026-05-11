@@ -16,7 +16,7 @@ class Producers(Process):
         trigger_event: Event,
         plot_queue: Queue,
         zmq_addr: str,
-        log_queue: Queue
+        log_queue: Queue,
     ):
         # CRITICAL: Call super constructor
         super().__init__(name="ProducersProcess")
@@ -30,10 +30,14 @@ class Producers(Process):
 
     def run(self):
         try:
-            from src.threads.producers import MSeedWriter, TriggerProcessor, WebSocketSender
+            from src.threads.producers import (
+                MSeedWriter,
+                TriggerProcessor,
+                WebSocketSender,
+            )
 
             configure_worker_logging(self.log_queue)
-            
+
             self.logger = logging.getLogger(__name__)
 
             self.logger.info("Starting Producers Process (Reader + Trigger + Writer)")
@@ -69,12 +73,21 @@ class Producers(Process):
                     for job in jobs:
                         job.join(timeout=0.1)
                         if not job.is_alive() and not self.shutdown_event.is_set():
-                            self.logger.error("Manager thread %s died unexpectedly", job.name)
+                            self.logger.error(
+                                "Manager thread %s died unexpectedly", job.name
+                            )
                             self.shutdown_event.set()  # Kill everything if a core thread dies
                             break
 
-            except Exception:
-                self.logger.exception("Error in Producers process container")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                self.logger.error(
+                    "Error in Producers process container: %s",
+                    error_msg,
+                    exc_info=False,
+                )
                 self.shutdown_event.set()
             finally:
                 self.logger.info("Cleaning up Producer threads...")
@@ -85,5 +98,7 @@ class Producers(Process):
                         job.join(timeout=5.0)
                 self.logger.info("Producers process stopped.")
         except Exception as e:
-            print("Error in Producers process: ", e)
-            self.logger.exception("Error in Producers process: ", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Error in Producers process: %s", error_msg)

@@ -71,6 +71,8 @@ def render_dayplot_worker(task, settings_dict):
         logger.info("Dayplot updated: %s", plot_filename.name)
         return True
 
-    except Exception:
-        logger.error("Failed to generate plot for %s", task.get('mseed_path'), exc_info=True)
+    except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        logger.error("Failed to generate plot for %s: %s", task.get('mseed_path'), error_msg)
         return False

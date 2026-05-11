@@ -1,5 +1,5 @@
-import time
 import logging
+import time
 from multiprocessing import Event, Process, Queue
 from os import getpid
 
@@ -25,7 +25,7 @@ class Reader(Process):
         settings: Settings,
         shutdown_event: Event,
         zmq_endpoint: str,
-        log_queue: Queue
+        log_queue: Queue,
     ):
         super().__init__(name="ReaderProcess")
         self.port = settings.jobs_settings.reader.port
@@ -49,7 +49,7 @@ class Reader(Process):
     def run(self):
         try:
             configure_worker_logging(self.log_queue)
-            
+
             self.logger = logging.getLogger(__name__)
 
             self.logger.info("Reader started. PID: %d", getpid())
@@ -61,7 +61,9 @@ class Reader(Process):
 
             try:
                 with serial.Serial(self.port, self.baudrate, timeout=0.1) as ser:
-                    self.logger.info("Connected to RS-422 on %s at %d", self.port, self.baudrate)
+                    self.logger.info(
+                        "Connected to RS-422 on %s at %d", self.port, self.baudrate
+                    )
 
                     if not self._send_settings(ser, is_initial_connect=True):
                         raise MCUNoResponse("MCU did not respond to settings update.")
@@ -75,11 +77,15 @@ class Reader(Process):
                         if elapsed > self.connection_timeout:
                             # If we haven't seen a packet, the Arduino might be in STOP mode
                             # because its buffer got full. We "poke" it by sending settings again.
-                            self.logger.warning("No data for %fs. Re-poking MCU...", elapsed)
+                            self.logger.warning(
+                                "No data for %fs. Re-poking MCU...", elapsed
+                            )
                             ser.reset_input_buffer()  # Clear incoming junk
-                            ser.reset_output_buffer() # Clear pending writes
+                            ser.reset_output_buffer()  # Clear pending writes
                             if not self._send_settings(ser):
-                                raise MCUNoResponse("MCU did not respond to re-poke attempt. Hard reset needed.")
+                                raise MCUNoResponse(
+                                    "MCU did not respond to re-poke attempt. Hard reset needed."
+                                )
                             self.last_packet_time = time.time()
 
                         # read available data
@@ -101,7 +107,9 @@ class Reader(Process):
                                         : Sample.PACKET_SIZE
                                     ]  # Remove processed packet
                                 else:
-                                    self.logger.warning("Checksum failed, shifting buffer")
+                                    self.logger.warning(
+                                        "Checksum failed, shifting buffer"
+                                    )
                                     self.soh_tracker.record_checksum_error()
                                     self.soh_tracker.record_dropped_bytes(1)
                                     del buffer[0]  # Slide window to find next header
@@ -113,11 +121,18 @@ class Reader(Process):
                         if time.time() - self.last_soh_update > 5.0:
                             soh_stats = self.soh_tracker.get_snapshot()
                             # Send on a specific ZMQ topic or a different socket
-                            self.pub_socket.send_json({"type": "SOH", "data": soh_stats})
+                            self.pub_socket.send_json(
+                                {"type": "SOH", "data": soh_stats}
+                            )
                             self.last_soh_update = time.time()
 
-            except Exception:
-                self.logger.exception("RS-422 Reader exception")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                self.logger.error(
+                    "RS-422 Reader exception: %s", error_msg, exc_info=False
+                )
             finally:
                 self.soh_tracker.set_disconnected()
                 self.logger.info("RS-422 Reader stopped.")
@@ -125,8 +140,10 @@ class Reader(Process):
                 self.pub_socket.close()
                 context.term()
         except Exception as e:
-            print("Error in Reader process: ", e)
-            self.logger.exception("Error in Reader process: ", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Error in Reader process: %s", error_msg)
 
     def _process_packet(self, data: Sample):
         timestamp = time.time()

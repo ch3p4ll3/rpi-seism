@@ -95,11 +95,20 @@ class Plotters(Process):
                                 time.time() - drain_start_time
                                 > self.settings_dict["shutdown_timeout"]
                             ):
-                                self.logger.info("Safety timeout reached. Force closing.")
+                                self.logger.info(
+                                    "Safety timeout reached. Force closing."
+                                )
                                 break
 
-                    except Exception:
-                        self.logger.exception("Error in Plotters manager loop")
+                    except Exception as e:
+                        import traceback
+
+                        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                        self.logger.error(
+                            "Error in Plotters manager loop: %s",
+                            error_msg,
+                            exc_info=False,
+                        )
 
                 # Finalize the pool
                 pool.close()
@@ -107,5 +116,7 @@ class Plotters(Process):
 
             self.logger.info("Plotters process stopped.")
         except Exception as e:
-            print("Error in plotter process: ", e)
-            self.logger.exception("Error in plotter process: ", exc_info=True)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Error in plotter process: %s", error_msg)

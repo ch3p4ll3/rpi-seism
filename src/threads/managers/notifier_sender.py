@@ -72,8 +72,11 @@ class NotifierSender(Thread):
                     self._handle_event()
                     self.last_notification = time.time()
 
-            except Exception:
-                logger.exception("Error in Notifier loop")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                logger.error("Error in Notifier loop: %s", error_msg, exc_info=False)
 
         sub_socket.close()
         context.term()
