@@ -39,7 +39,6 @@ class WebSocketSender(Thread):
         self.earthquake_event = earthquake_event
         self.zmq_endpoint = zmq_endpoint
         self.settings = settings
-        self.websocket_settings = settings.jobs_settings.websocket
 
         self._clients = set()
 
@@ -171,13 +170,13 @@ class WebSocketSender(Thread):
         try:
             tr_decimated.filter("bandpass", freqmin=0.2, freqmax=10.0)
             # Note: decimation_factor must be e.g., 2, 4, 5, 8, 10
-            tr_decimated.decimate(self.settings.decimation_factor, no_filter=False)
+            tr_decimated.decimate(self.websocket_settings.decimation_factor, no_filter=False)
         except Exception as e:
             logger.error("Decimation failed for %s: %s", channel_name, e)
             return
 
         # Extract the new batch of downsampled samples
-        new_samples_count = int(self.step_size / self.settings.decimation_factor)
+        new_samples_count = int(self.step_size / self.websocket_settings.decimation_factor)
         downsampled_values = tr_decimated.data[-new_samples_count:]
 
         # Construct and send the message
