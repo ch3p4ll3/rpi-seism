@@ -151,7 +151,7 @@ class RingServerSender(Thread):
 
                     self.client.write(stream_id, start_us, end_us, mseed_data)
 
-            logger.info("Flushed %d channels to Ringserver", len(self._buffer))
+            logger.debug("Flushed %d channels to Ringserver", len(self._buffer))
 
         except (DataLinkError, OSError) as e:
             import traceback

@@ -59,10 +59,14 @@ class Producers(Process):
             )
             jobs.append(trigger_job)
 
-            websocket_job = WebSocketSender(
-                self.settings, self.shutdown_event, self.trigger_event, self.zmq_addr
-            )
-            jobs.append(websocket_job)
+            if self.settings.jobs_settings.websocket.enabled:
+                websocket_job = WebSocketSender(
+                    self.settings,
+                    self.shutdown_event,
+                    self.trigger_event,
+                    self.zmq_addr,
+                )
+                jobs.append(websocket_job)
 
             for job in jobs:
                 job.start()

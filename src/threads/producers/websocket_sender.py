@@ -33,16 +33,13 @@ class WebSocketSender(Thread):
         shutdown_event: Event,
         earthquake_event: Event,
         zmq_endpoint: str = "ipc:///tmp/seismic_data.ipc",
-        host: str = "0.0.0.0",
-        port: int = 8765,
     ):
         super().__init__(daemon=True)
         self.shutdown_event = shutdown_event
         self.earthquake_event = earthquake_event
         self.zmq_endpoint = zmq_endpoint
-        self.host = host
-        self.port = port
         self.settings = settings
+        self.websocket_settings = settings.jobs_settings.websocket
 
         self._clients = set()
 
@@ -64,17 +61,24 @@ class WebSocketSender(Thread):
         asyncio.run(self._main_loop())
 
     async def _main_loop(self):
+        if not self.websocket_settings.enabled:
+            return
+
         self.ctx = zmq.asyncio.Context()
         self.sub_socket = self.ctx.socket(zmq.SUB)
         self.sub_socket.connect(self.zmq_endpoint)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all
         self.sub_socket.setsockopt(zmq.RCVTIMEO, 100)
 
-        async with websockets.serve(self._handle_connection, self.host, self.port):
+        async with websockets.serve(
+            self._handle_connection,
+            self.websocket_settings.host,
+            self.websocket_settings.port,
+        ):
             logger.info(
                 "WebSocket Server started on ws://%s:%d . PID: %d",
-                self.host,
-                self.port,
+                self.websocket_settings.host,
+                self.websocket_settings.port,
                 getpid(),
             )
             await self._producer_loop()
