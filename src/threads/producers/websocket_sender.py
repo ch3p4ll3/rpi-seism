@@ -39,6 +39,7 @@ class WebSocketSender(Thread):
         self.earthquake_event = earthquake_event
         self.zmq_endpoint = zmq_endpoint
         self.settings = settings
+        self.websocket_settings = settings.jobs_settings.websocket
 
         self._clients = set()
 
