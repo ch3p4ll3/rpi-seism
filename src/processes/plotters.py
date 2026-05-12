@@ -68,9 +68,11 @@ class Plotters(Process):
 
                         # Handle actual plot tasks
                         if isinstance(task, dict):
+                            # Create a shallow copy to avoid pickling the queue reference
+                            task_copy = dict(task)
                             pool.apply_async(
                                 render_dayplot_worker,
-                                args=(task, self.settings_dict),
+                                args=(task_copy, self.settings_dict),
                                 callback=self.logger.info,  # Logs the success string from worker
                             )
 
