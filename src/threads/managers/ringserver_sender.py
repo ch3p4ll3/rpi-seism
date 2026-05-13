@@ -157,7 +157,7 @@ class RingServerSender(Thread):
             import traceback
 
             error_msg = f"{str(e)}\n{traceback.format_exc()}"
-            self.logger.error("Flush failed: %s", error_msg)
+            logger.error("Flush failed: %s", error_msg, exc_info=False)
             self.client.close()
             self.client = None
         finally:

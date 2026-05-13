@@ -173,7 +173,10 @@ class WebSocketSender(Thread):
             # Note: decimation_factor must be e.g., 2, 4, 5, 8, 10
             tr_decimated.decimate(self.websocket_settings.decimation_factor, no_filter=False)
         except Exception as e:
-            logger.error("Decimation failed for %s: %s", channel_name, e)
+            import traceback
+            # Convert exception to string immediately to avoid pickling zlib objects
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error("Decimation failed for %s: %s", channel_name, error_msg, exc_info=False)
             return
 
         # Extract the new batch of downsampled samples
