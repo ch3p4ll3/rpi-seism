@@ -141,10 +141,10 @@ class WebSocketSender(Thread):
                 continue  # No message received within timeout, loop back and check shutdown_event
             except asyncio.TimeoutError:
                 continue
-            except Exception as e:
+            except Exception:
                 import traceback
-
-                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                # Don't bind exception to avoid capturing unpicklable objects
+                error_msg = traceback.format_exc()
                 logger.error(
                     "Error in WebSocket producer loop: %s", error_msg, exc_info=False
                 )
@@ -172,10 +172,10 @@ class WebSocketSender(Thread):
             tr_decimated.filter("bandpass", freqmin=0.2, freqmax=10.0)
             # Note: decimation_factor must be e.g., 2, 4, 5, 8, 10
             tr_decimated.decimate(self.websocket_settings.decimation_factor, no_filter=False)
-        except Exception as e:
+        except Exception:
             import traceback
-            # Convert exception to string immediately to avoid pickling zlib objects
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            # Don't bind exception to avoid capturing unpicklable zlib objects
+            error_msg = traceback.format_exc()
             logger.error("Decimation failed for %s: %s", channel_name, error_msg, exc_info=False)
             return
 
