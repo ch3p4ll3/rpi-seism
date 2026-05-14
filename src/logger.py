@@ -1,6 +1,12 @@
-import copy
 import logging
 from logging import config, handlers
+
+_STANDARD_ATTRS = frozenset({
+    'args', 'asctime', 'created', 'exc_info', 'exc_text', 'filename',
+    'funcName', 'levelname', 'levelno', 'lineno', 'message', 'module',
+    'msecs', 'msg', 'name', 'pathname', 'process', 'processName',
+    'relativeCreated', 'stack_info', 'thread', 'threadName',
+})
 
 
 def setup_main_logging(base_path, queue):
@@ -56,14 +62,10 @@ def setup_main_logging(base_path, queue):
 
 class SafeQueueHandler(handlers.QueueHandler):
     def prepare(self, record):
-        msg = self.format(record)
-        record = copy.copy(record)
-        record.message = msg
-        record.msg = msg
-        record.args = None
-        record.exc_info = None
-        record.exc_text = None
-        record.stack_info = None
+        record = super().prepare(record)
+        for key in list(record.__dict__):
+            if key not in _STANDARD_ATTRS:
+                del record.__dict__[key]
         return record
 
 
