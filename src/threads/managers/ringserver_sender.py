@@ -53,7 +53,7 @@ class RingServerSender(Thread):
 
             # Consume Queue
             try:
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") != "packet":
                     continue
@@ -62,7 +62,7 @@ class RingServerSender(Thread):
                     self._start_time = packet["timestamp"]
 
                 for item in packet["measurements"]:
-                    ch_name = item["channel"].name
+                    ch_name = item["channel"]["name"]
                     self._buffer.setdefault(ch_name, []).append(item["value"])
             except zmq.Again:
                 # No more data in the ZMQ socket for now
@@ -96,7 +96,10 @@ class RingServerSender(Thread):
             )
             logger.info("Connected to Ringserver: %s", server_id)
         except Exception as e:
-            logger.error("DataLink connection failed: %s", e)
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error("DataLink connection failed: %s", error_msg)
             self.client = None
 
     def _flush(self):
@@ -148,10 +151,13 @@ class RingServerSender(Thread):
 
                     self.client.write(stream_id, start_us, end_us, mseed_data)
 
-            logger.info(f"Flushed {len(self._buffer)} channels to Ringserver")
+            logger.debug("Flushed %d channels to Ringserver", len(self._buffer))
 
         except (DataLinkError, OSError) as e:
-            logger.error(f"Flush failed: {e}")
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error("Flush failed: %s", error_msg, exc_info=False)
             self.client.close()
             self.client = None
         finally:

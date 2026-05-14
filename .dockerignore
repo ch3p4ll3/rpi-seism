@@ -12,3 +12,5 @@ wheels/
 *.mseed
 data/
 .lgd-nfy0
+
+.git/

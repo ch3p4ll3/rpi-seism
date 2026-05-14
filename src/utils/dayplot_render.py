@@ -36,7 +36,7 @@ def render_dayplot_worker(task, settings_dict):
         data_path = task["mseed_path"]
         plot_path = task["plot_path"]
 
-        logger.debug(f"Starting render for {Path(data_path).name}")
+        logger.debug("Starting render for %s", Path(data_path).name)
 
         # Processing Logic
         st = read(str(data_path))
@@ -68,9 +68,11 @@ def render_dayplot_worker(task, settings_dict):
         gc.collect()
 
         # Log success from inside the worker
-        logger.info(f"Dayplot updated: {plot_filename.name}")
+        logger.info("Dayplot updated: %s", plot_filename.name)
         return True
 
     except Exception as e:
-        logger.error(f"Failed to generate plot for {task.get('mseed_path')}: {e}")
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        logger.error("Failed to generate plot for %s: %s", task.get('mseed_path'), error_msg)
         return False

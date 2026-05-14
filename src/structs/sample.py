@@ -68,8 +68,8 @@ class Sample:
             "type": "packet",
             "timestamp": timestamp,
             "measurements": [
-                {"channel": channels.get(0), "value": self.ch0},
-                {"channel": channels.get(1), "value": self.ch1},
-                {"channel": channels.get(2), "value": self.ch2}
+                {"channel": channels.get(0).model_dump(mode="json"), "value": self.ch0},
+                {"channel": channels.get(1).model_dump(mode="json"), "value": self.ch1},
+                {"channel": channels.get(2).model_dump(mode="json"), "value": self.ch2}
             ]
         }

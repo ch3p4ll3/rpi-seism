@@ -70,7 +70,7 @@ class TriggerProcessor(Thread):
         while not self.shutdown_event.is_set():
             try:
                 # Expecting: {"timestamp": float, "measurements": [{"channel": obj, "value": int}, ...]}
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") != "packet":
                     continue
@@ -80,7 +80,7 @@ class TriggerProcessor(Thread):
                     (
                         item["value"]
                         for item in packet["measurements"]
-                        if item["channel"].name == self.trigger_channel
+                        if item["channel"]["name"] == self.trigger_channel
                     ),
                     None,
                 )
@@ -98,8 +98,13 @@ class TriggerProcessor(Thread):
             except zmq.Again:
                 # This exception is raised when RCVTIMEO is hit
                 pass
-            except Exception:
-                logger.exception("Error in Trigger Processor loop")
+            except Exception as e:
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                logger.error(
+                    "Error in Trigger Processor loop: %s", error_msg, exc_info=False
+                )
 
         sub_socket.close()
         context.term()
@@ -119,14 +124,16 @@ class TriggerProcessor(Thread):
         # Handle State Changes (Edge Detection) with Dual Thresholds (Hysteresis)
         if current_ratio > self.thr_on and not self.last_trigger:
             logger.warning(
-                f"EARTHQUAKE DETECTED: STA/LTA ratio {current_ratio:.2f} > {self.thr_on}"
+                "EARTHQUAKE DETECTED: STA/LTA ratio %f > %f", current_ratio, self.thr_on
             )
             self.earthquake_event.set()
             self.last_trigger = True
 
         elif current_ratio < self.thr_off and self.last_trigger:
             logger.info(
-                f"Trigger cleared: Signal ratio {current_ratio:.2f} returned below {self.thr_off}"
+                "Trigger cleared: Signal ratio %f returned below %f",
+                current_ratio,
+                self.thr_off,
             )
             self.earthquake_event.clear()
             self.last_trigger = False

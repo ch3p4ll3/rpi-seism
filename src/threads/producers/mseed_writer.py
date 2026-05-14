@@ -77,7 +77,7 @@ class MSeedWriter(Thread):
 
             try:
                 # Receive one packet at a time
-                packet = sub_socket.recv_pyobj()
+                packet = sub_socket.recv_json()
 
                 if packet.get("type") == "packet":
                     ts = packet["timestamp"]
@@ -85,14 +85,17 @@ class MSeedWriter(Thread):
                         self._start_time = ts
 
                     for item in packet["measurements"]:
-                        ch_name = item["channel"].name
+                        ch_name = item["channel"]["name"]
                         self._buffer.setdefault(ch_name, []).append(item["value"])
 
             except zmq.Again:
                 # This exception is raised when RCVTIMEO is hit
                 pass
             except Exception as e:
-                logger.error(f"ZMQ Error: {e}")
+                import traceback
+
+                error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                self.logger.error("Writer error: %s", error_msg)
 
             # Now these checks will actually execute!
 

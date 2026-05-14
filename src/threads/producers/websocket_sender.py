@@ -33,16 +33,13 @@ class WebSocketSender(Thread):
         shutdown_event: Event,
         earthquake_event: Event,
         zmq_endpoint: str = "ipc:///tmp/seismic_data.ipc",
-        host: str = "0.0.0.0",
-        port: int = 8765,
     ):
         super().__init__(daemon=True)
         self.shutdown_event = shutdown_event
         self.earthquake_event = earthquake_event
         self.zmq_endpoint = zmq_endpoint
-        self.host = host
-        self.port = port
         self.settings = settings
+        self.websocket_settings = settings.jobs_settings.websocket
 
         self._clients = set()
 
@@ -64,20 +61,35 @@ class WebSocketSender(Thread):
         asyncio.run(self._main_loop())
 
     async def _main_loop(self):
+        if not self.websocket_settings.enabled:
+            return
+
         self.ctx = zmq.asyncio.Context()
         self.sub_socket = self.ctx.socket(zmq.SUB)
         self.sub_socket.connect(self.zmq_endpoint)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all
         self.sub_socket.setsockopt(zmq.RCVTIMEO, 100)
 
-        async with websockets.serve(self._handle_connection, self.host, self.port):
-            logger.info(
-                "WebSocket Server started on ws://%s:%d . PID: %d",
-                self.host,
-                self.port,
-                getpid(),
+        try:
+            async with websockets.serve(
+                self._handle_connection,
+                self.websocket_settings.host,
+                self.websocket_settings.port,
+            ):
+                logger.info(
+                    "WebSocket Server started on ws://%s:%d . PID: %d",
+                    self.websocket_settings.host,
+                    self.websocket_settings.port,
+                    getpid(),
+                )
+                await self._producer_loop()
+        except Exception:
+            import traceback
+            # Don't bind exception to avoid capturing unpicklable objects
+            error_msg = traceback.format_exc()
+            logger.error(
+                "Error in WebSocket producer loop: %s", error_msg, exc_info=False
             )
-            await self._producer_loop()
 
     async def _handle_connection(self, websocket):
         self._clients.add(websocket)
@@ -91,7 +103,7 @@ class WebSocketSender(Thread):
             try:
                 # Expecting: {"timestamp": float, "measurements": [{"channel": obj, "value": int}, ...]}
                 packet = await asyncio.wait_for(
-                    self.sub_socket.recv_pyobj(), timeout=1.0
+                    self.sub_socket.recv_json(), timeout=1.0
                 )
 
                 # Filter for packets
@@ -105,7 +117,7 @@ class WebSocketSender(Thread):
 
                 # update each channel's buffer
                 for item in packet["measurements"]:
-                    ch_name = item["channel"].name
+                    ch_name = item["channel"]["name"]
                     val = item["value"]
 
                     if ch_name not in self.channels_state:
@@ -138,7 +150,12 @@ class WebSocketSender(Thread):
             except asyncio.TimeoutError:
                 continue
             except Exception:
-                logger.exception("Error in WebSocket producer loop")
+                import traceback
+                # Don't bind exception to avoid capturing unpicklable objects
+                error_msg = traceback.format_exc()
+                logger.error(
+                    "Error in WebSocket producer loop: %s", error_msg, exc_info=False
+                )
 
         self.sub_socket.close()
         self.ctx.term()
@@ -151,6 +168,32 @@ class WebSocketSender(Thread):
 
         state = self.channels_state[channel_name]
 
+        # Isolate ObsPy processing to avoid pickling issues with logging
+        try:
+            decimated_data = self._decimate_data(state)
+        except Exception:
+            import traceback
+            error_msg = traceback.format_exc()
+            logger.error("Decimation failed for %s: %s", channel_name, error_msg, exc_info=False)
+            return
+
+        if decimated_data is None:
+            return
+
+        # Construct and send the message
+        message = SamplePayload(
+            channel=channel_name,
+            timestamp=decimated_data["timestamp"],
+            fs=decimated_data["fs"],
+            data=decimated_data["data"],
+        )
+
+        await self._broadcast(Sample(payload=message))
+
+    def _decimate_data(self, state):
+        """Separate function to isolate ObsPy objects from logging context.
+        Returns dict with decimated data or None on error.
+        """
         # Create Trace from current buffer
         data_array = np.array(state["data"])
         tr = Trace(data=data_array)
@@ -159,29 +202,24 @@ class WebSocketSender(Thread):
 
         # Decimate (Anti-Alias filter applied)
         tr_decimated = tr.copy()
-        try:
-            tr_decimated.filter("bandpass", freqmin=0.2, freqmax=10.0)
-            # Note: decimation_factor must be e.g., 2, 4, 5, 8, 10
-            tr_decimated.decimate(self.settings.decimation_factor, no_filter=False)
-        except Exception as e:
-            logger.error("Decimation failed for %s: %s", channel_name, e)
-            return
+        tr_decimated.filter("bandpass", freqmin=0.2, freqmax=10.0)
+        # Note: decimation_factor must be e.g., 2, 4, 5, 8, 10
+        tr_decimated.decimate(self.websocket_settings.decimation_factor, no_filter=False)
 
         # Extract the new batch of downsampled samples
-        new_samples_count = int(self.step_size / self.settings.decimation_factor)
+        new_samples_count = int(self.step_size / self.websocket_settings.decimation_factor)
         downsampled_values = tr_decimated.data[-new_samples_count:]
 
-        # Construct and send the message
-        message = SamplePayload(
-            channel=channel_name,
-            timestamp=tr_decimated.stats.endtime.isoformat() + "Z",
-            fs=tr_decimated.stats.sampling_rate,
-            data=downsampled_values.tolist(),
-        )
+        result = {
+            "timestamp": tr_decimated.stats.endtime.isoformat() + "Z",
+            "fs": tr_decimated.stats.sampling_rate,
+            "data": downsampled_values.tolist(),
+        }
 
-        await self._broadcast(Sample(payload=message))
+        # Clean up before returning to prevent any lingering references
+        del tr, tr_decimated, data_array
         
-        del tr, tr_decimated
+        return result
 
     async def _broadcast_soh(self):
         """Broadcast current State of Health metrics to all connected clients."""

@@ -90,7 +90,7 @@ def main():
         for p in all_processes:
             p.join(timeout=30)
             if p.is_alive():
-                logger.warning(f"Process {p.name} refused to exit. Terminating...")
+                logger.warning("Process %s refused to exit. Terminating...", p.name)
                 p.terminate()
 
         log_listener.stop()  # Stop this last

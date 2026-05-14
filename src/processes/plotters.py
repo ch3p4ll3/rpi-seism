@@ -28,80 +28,97 @@ class Plotters(Process):
         self.log_queue = log_queue
 
     def run(self):
-        if not self.settings_dict["enabled"]:
-            return
+        try:
+            if not self.settings_dict["enabled"]:
+                return
 
-        from src.logger import configure_worker_logging
+            from src.logger import configure_worker_logging
 
-        configure_worker_logging(self.log_queue)
-        self.logger = logging.getLogger(__name__)
-        self.logger.info("Plotters Manager started. PID: %d", getpid())
+            configure_worker_logging(self.log_queue)
+            self.logger = logging.getLogger(__name__)
+            self.logger.info("Plotters Manager started. PID: %d", getpid())
 
-        # processes=1: Do one plot at a time to save RAM
-        # maxtasksperchild=1: KILL the process after 1 task to prevent OOM
-        with Pool(
-            processes=1,
-            maxtasksperchild=1,
-            initializer=init_worker,
-            initargs=(self.log_queue,),
-        ) as pool:
-            drain_start_time = None
-            writer_finished = False
+            # processes=1: Do one plot at a time to save RAM
+            # maxtasksperchild=1: KILL the process after 1 task to prevent OOM
+            with Pool(
+                processes=1,
+                maxtasksperchild=1,
+                initializer=init_worker,
+                initargs=(self.log_queue,),
+            ) as pool:
+                drain_start_time = None
+                writer_finished = False
 
-            while True:
-                try:
-                    # Check for a task (1s timeout to keep loop responsive)
+                while True:
                     try:
-                        task = self.plot_queue.get(timeout=1.0)
-                    except Empty:
-                        task = "EMPTY"
+                        # Check for a task (1s timeout to keep loop responsive)
+                        try:
+                            task = self.plot_queue.get(timeout=1.0)
+                        except Empty:
+                            task = "EMPTY"
 
-                    # Handle Writer Shutdown Sentinel (None)
-                    if task is None:
-                        self.logger.info(
-                            "Writer finished signal received. Draining for 10s..."
-                        )
-                        writer_finished = True
-                        drain_start_time = time.time()
-                        continue
-
-                    # Handle actual plot tasks
-                    if isinstance(task, dict):
-                        pool.apply_async(
-                            render_dayplot_worker,
-                            args=(task, self.settings_dict),
-                            callback=self.logger.info,  # Logs the success string from worker
-                        )
-
-                    # Case A: Writer sent 'None', wait 10s for final data to clear
-                    if writer_finished:
-                        if (
-                            time.time() - drain_start_time
-                            > self.settings_dict["shutdown_timeout"]
-                        ):
-                            self.logger.info("Grace period complete. Closing Pool.")
-                            break
-
-                    # Case B: Global shutdown event (Ctrl+C), fallback timer
-                    elif self.shutdown_event.is_set():
-                        if drain_start_time is None:
+                        # Handle Writer Shutdown Sentinel (None)
+                        if task is None:
+                            self.logger.info(
+                                "Writer finished signal received. Draining for 10s..."
+                            )
+                            writer_finished = True
                             drain_start_time = time.time()
-                            self.logger.warning(
-                                "Global shutdown. Waiting 10s for writer cleanup..."
+                            continue
+
+                        # Handle actual plot tasks
+                        if isinstance(task, dict):
+                            # Create a shallow copy to avoid pickling the queue reference
+                            task_copy = dict(task)
+                            pool.apply_async(
+                                render_dayplot_worker,
+                                args=(task_copy, self.settings_dict),
+                                callback=self.logger.info,  # Logs the success string from worker
                             )
 
-                        if (
-                            time.time() - drain_start_time
-                            > self.settings_dict["shutdown_timeout"]
-                        ):
-                            self.logger.info("Safety timeout reached. Force closing.")
-                            break
+                        # Case A: Writer sent 'None', wait 10s for final data to clear
+                        if writer_finished:
+                            if (
+                                time.time() - drain_start_time
+                                > self.settings_dict["shutdown_timeout"]
+                            ):
+                                self.logger.info("Grace period complete. Closing Pool.")
+                                break
 
-                except Exception:
-                    self.logger.exception("Error in Plotters manager loop")
+                        # Case B: Global shutdown event (Ctrl+C), fallback timer
+                        elif self.shutdown_event.is_set():
+                            if drain_start_time is None:
+                                drain_start_time = time.time()
+                                self.logger.warning(
+                                    "Global shutdown. Waiting 10s for writer cleanup..."
+                                )
 
-            # Finalize the pool
-            pool.close()
-            pool.join()
+                            if (
+                                time.time() - drain_start_time
+                                > self.settings_dict["shutdown_timeout"]
+                            ):
+                                self.logger.info(
+                                    "Safety timeout reached. Force closing."
+                                )
+                                break
 
-        self.logger.info("Plotters process stopped.")
+                    except Exception as e:
+                        import traceback
+
+                        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+                        self.logger.error(
+                            "Error in Plotters manager loop: %s",
+                            error_msg,
+                            exc_info=False,
+                        )
+
+                # Finalize the pool
+                pool.close()
+                pool.join()
+
+            self.logger.info("Plotters process stopped.")
+        except Exception as e:
+            import traceback
+
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            self.logger.error("Error in plotter process: %s", error_msg)

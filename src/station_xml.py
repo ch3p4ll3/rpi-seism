@@ -64,7 +64,7 @@ def _build_channel_response(settings: Settings, channel: SettingsChannel) -> Res
     counts_per_volt = (settings.mcu.adc_gain_value * 2**23) / settings.mcu.vref
     total_sensitivity = channel.sensitivity * channel.analog_gain * counts_per_volt
 
-    logger.debug(f"Building response for channel {channel.name}: counts_per_volt={counts_per_volt:.2f}, total_sensitivity={total_sensitivity:.2f}")
+    logger.debug("Building response for channel %s: counts_per_volt=%f, total_sensitivity=%f", channel.name, counts_per_volt, total_sensitivity)
 
     # Compute PAZ analytically from f0 and damping via ObsPy.
     paz = corn_freq_2_paz(fc=channel.natural_frequency, damp=channel.damping)
@@ -272,7 +272,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
         logger.info(
             "station.xml written to %s — "
             "keep this file in version control and never delete existing epochs.",
-            output_path,
+            str(output_path),
         )
         return output_path
 
@@ -309,7 +309,7 @@ def ensure_station_xml(settings: Settings, output_path: Path) -> Path:
     logger.info(
         "Settings changed and start_date updated (%s → %s). "
         "Closing old epochs and appending new ones.",
-        saved_start_date, current_start_date,
+        str(saved_start_date), str(current_start_date),
     )
 
     _close_and_append_epochs(
