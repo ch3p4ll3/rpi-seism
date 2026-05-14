@@ -70,18 +70,26 @@ class WebSocketSender(Thread):
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all
         self.sub_socket.setsockopt(zmq.RCVTIMEO, 100)
 
-        async with websockets.serve(
-            self._handle_connection,
-            self.websocket_settings.host,
-            self.websocket_settings.port,
-        ):
-            logger.info(
-                "WebSocket Server started on ws://%s:%d . PID: %d",
+        try:
+            async with websockets.serve(
+                self._handle_connection,
                 self.websocket_settings.host,
                 self.websocket_settings.port,
-                getpid(),
+            ):
+                logger.info(
+                    "WebSocket Server started on ws://%s:%d . PID: %d",
+                    self.websocket_settings.host,
+                    self.websocket_settings.port,
+                    getpid(),
+                )
+                await self._producer_loop()
+        except Exception:
+            import traceback
+            # Don't bind exception to avoid capturing unpicklable objects
+            error_msg = traceback.format_exc()
+            logger.error(
+                "Error in WebSocket producer loop: %s", error_msg, exc_info=False
             )
-            await self._producer_loop()
 
     async def _handle_connection(self, websocket):
         self._clients.add(websocket)
