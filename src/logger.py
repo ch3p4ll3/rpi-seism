@@ -1,3 +1,4 @@
+import copy
 import logging
 from logging import config, handlers
 
@@ -55,11 +56,14 @@ def setup_main_logging(base_path, queue):
 
 class SafeQueueHandler(handlers.QueueHandler):
     def prepare(self, record):
-        # This converts the exception traceback into a string
-        # so Python doesn't try to pickle the "live" traceback/zlib object.
-        if record.exc_info:
-            self.format(record)
-            record.exc_info = None  # Clear the un-pickleable object
+        msg = self.format(record)
+        record = copy.copy(record)
+        record.message = msg
+        record.msg = msg
+        record.args = None
+        record.exc_info = None
+        record.exc_text = None
+        record.stack_info = None
         return record
 
 
